@@ -25,6 +25,11 @@ type = "local"
 path = "toml/test"
 ipkg = "test.ipkg"
 
+[custom.all.parser-yaml]
+type = "local"
+path = "yaml"
+ipkg = "parser-yaml.ipkg"
+
 [custom.all.parser-json]
 type = "local"
 path = "json"

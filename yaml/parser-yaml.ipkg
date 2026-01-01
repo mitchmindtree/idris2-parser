@@ -1,0 +1,12 @@
+package parser-yaml
+version   = 0.1.0
+authors   = "mitchmindtree"
+sourcedir = "src"
+depends   = parser
+
+brief     = "Total and efficient parser and lexer for the YAML data format"
+
+modules = Text.YAML.Types
+        , Text.YAML.Lexer
+        , Text.YAML.Parser
+        , Text.YAML
