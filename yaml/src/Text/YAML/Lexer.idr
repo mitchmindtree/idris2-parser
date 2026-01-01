@@ -253,51 +253,86 @@ inFlow (InFlow _) = True
 --          Main Lexer
 --------------------------------------------------------------------------------
 
+||| Get the current indentation level from the stack
+currentIndent : List Nat -> Nat
+currentIndent []        = 0
+currentIndent (x :: _)  = x
+
+||| Emit TDedent tokens for each level we're popping off the stack
+||| Returns the new stack and the tokens to emit
+popIndents :
+     Position
+  -> SnocList (Bounded YAMLToken)
+  -> (spaces : Nat)
+  -> List Nat
+  -> (List Nat, SnocList (Bounded YAMLToken))
+popIndents pos sx spaces [] = ([], sx)
+popIndents pos sx spaces (lvl :: rest) =
+  if spaces < lvl
+    then popIndents pos (sx :< bounded TDedent pos pos) spaces rest
+    else (lvl :: rest, sx)
+
 mutual
-  ||| After newline: count spaces, check indentation, emit TDedent if needed
+  ||| After newline: count spaces, check indentation, emit TIndent/TDedent as needed
   lexAfterNewline :
        FlowCtxt
-    -> (indent : Nat)
+    -> (indStack : List Nat)
     -> Position
     -> SnocList (Bounded YAMLToken)
     -> (spaces : Nat)
     -> (cs : List Char)
     -> (0 acc : SuffixAcc cs)
     -> Either (Bounded YAMLErr) (List $ Bounded YAMLToken)
-  lexAfterNewline ctx ind pos sx spaces (' ' :: xs) (SA r) =
-    lexAfterNewline ctx ind (incCol pos) sx (S spaces) xs r
-  lexAfterNewline ctx ind pos sx spaces ('\t' :: xs) _ =
+  lexAfterNewline ctx stack pos sx spaces (' ' :: xs) (SA r) =
+    lexAfterNewline ctx stack (incCol pos) sx (S spaces) xs r
+  lexAfterNewline ctx stack pos sx spaces ('\t' :: xs) _ =
     Left $ bounded (Custom TabIndent) pos (incCol pos)
-  lexAfterNewline ctx ind pos sx spaces xs acc =
-    if spaces < ind
-      then lex ctx spaces pos (sx :< bounded TDedent pos pos) xs acc
-      else lex ctx ind pos sx xs acc
+  -- Blank line or comment-only line: skip without changing indent state
+  lexAfterNewline ctx stack pos sx spaces ('\n' :: xs) (SA r) =
+    let pos2 = incLine pos
+     in lexAfterNewline ctx stack pos2 (sx :< bounded TNewline pos pos2) 0 xs r
+  lexAfterNewline ctx stack pos sx spaces ('\r' :: '\n' :: xs) (SA r) =
+    let pos2 = incLine pos
+     in lexAfterNewline ctx stack pos2 (sx :< bounded TNewline pos pos2) 0 xs r
+  lexAfterNewline ctx stack pos sx spaces xs acc =
+    let curIndent = currentIndent stack
+     in if spaces > curIndent
+          -- Indentation increased: push new level, emit TIndent
+          then let stack2 = spaces :: stack
+                   sx2    = sx :< bounded TIndent pos pos
+                in lex ctx stack2 pos sx2 xs acc
+          else if spaces < curIndent
+            -- Indentation decreased: pop levels, emit TDedent for each
+            then let (stack2, sx2) = popIndents pos sx spaces stack
+                  in lex ctx stack2 pos sx2 xs acc
+            -- Same indentation: continue
+            else lex ctx stack pos sx xs acc
 
   ||| Main lexer loop
   lex :
        FlowCtxt
-    -> (indent : Nat)
+    -> (indStack : List Nat)
     -> Position
     -> SnocList (Bounded YAMLToken)
     -> (cs : List Char)
     -> (0 acc : SuffixAcc cs)
     -> Either (Bounded YAMLErr) (List $ Bounded YAMLToken)
-  lex ctx ind pos sx [] _ = Right $ sx <>> [bounded TEOI pos pos]
-  lex ctx ind pos sx (' ' :: xs) (SA r)  = lex ctx ind (incCol pos) sx xs r
-  lex ctx ind pos sx ('\t' :: xs) (SA r) = lex ctx ind (incCol pos) sx xs r
-  lex ctx ind pos sx ('\n' :: xs) (SA r) =
+  lex ctx stack pos sx [] _ = Right $ sx <>> [bounded TEOI pos pos]
+  lex ctx stack pos sx (' ' :: xs) (SA r)  = lex ctx stack (incCol pos) sx xs r
+  lex ctx stack pos sx ('\t' :: xs) (SA r) = lex ctx stack (incCol pos) sx xs r
+  lex ctx stack pos sx ('\n' :: xs) (SA r) =
     if inFlow ctx
-      then lex ctx ind (incLine pos) sx xs r
+      then lex ctx stack (incLine pos) sx xs r
       else let pos2 = incLine pos
                sx2  = sx :< bounded TNewline pos pos2
-            in lexAfterNewline ctx ind pos2 sx2 0 xs r
-  lex ctx ind pos sx ('\r' :: '\n' :: xs) (SA r) =
+            in lexAfterNewline ctx stack pos2 sx2 0 xs r
+  lex ctx stack pos sx ('\r' :: '\n' :: xs) (SA r) =
     if inFlow ctx
-      then lex ctx ind (incLine pos) sx xs r
+      then lex ctx stack (incLine pos) sx xs r
       else let pos2 = incLine pos
                sx2  = sx :< bounded TNewline pos pos2
-            in lexAfterNewline ctx ind pos2 sx2 0 xs r
-  lex ctx ind pos sx ('#' :: xs) (SA r) = skipComment xs r
+            in lexAfterNewline ctx stack pos2 sx2 0 xs r
+  lex ctx stack pos sx ('#' :: xs) (SA r) = skipComment xs r
     where
       skipComment :
            (cs : List Char)
@@ -305,26 +340,26 @@ mutual
         -> Either (Bounded YAMLErr) (List $ Bounded YAMLToken)
       skipComment ('\n' :: ys) (SA r') =
         if inFlow ctx
-          then lex ctx ind (incLine pos) sx ys r'
+          then lex ctx stack (incLine pos) sx ys r'
           else let pos2 = incLine pos
-                in lexAfterNewline ctx ind pos2 (sx :< bounded TNewline pos pos2) 0 ys r'
+                in lexAfterNewline ctx stack pos2 (sx :< bounded TNewline pos pos2) 0 ys r'
       skipComment ('\r' :: '\n' :: ys) (SA r') =
         if inFlow ctx
-          then lex ctx ind (incLine pos) sx ys r'
+          then lex ctx stack (incLine pos) sx ys r'
           else let pos2 = incLine pos
-                in lexAfterNewline ctx ind pos2 (sx :< bounded TNewline pos pos2) 0 ys r'
+                in lexAfterNewline ctx stack pos2 (sx :< bounded TNewline pos pos2) 0 ys r'
       skipComment (_ :: ys) (SA r') = skipComment ys r'
       skipComment [] _ = Right $ sx <>> [bounded TEOI pos pos]
-  lex ctx ind pos sx cs (SA r) =
+  lex ctx stack pos sx cs (SA r) =
     let tok = if inFlow ctx then flowTok else blockTok
      in case tok cs of
           Succ val ys @{p'} =>
             let pos2 = endPos pos p'
                 ctx2 = adjFlow ctx val
-             in lex ctx2 ind pos2 (sx :< bounded val pos pos2) ys r
+             in lex ctx2 stack pos2 (sx :< bounded val pos pos2) ys r
           Fail start errEnd e => Left $ boundedErr pos start errEnd e
 
 ||| Lex a YAML string into a list of tokens
 export
 lexYAML : String -> Either (Bounded YAMLErr) (List $ Bounded YAMLToken)
-lexYAML s = lex NoFlow 0 begin [<] (unpack s) suffixAcc
+lexYAML s = lex NoFlow [0] begin [<] (unpack s) suffixAcc

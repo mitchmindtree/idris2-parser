@@ -71,6 +71,9 @@ data YAMLToken : Type where
   ||| Newline (significant in block context)
   TNewline  : YAMLToken
 
+  ||| Indent (indentation increased)
+  TIndent   : YAMLToken
+
   ||| Dedent (indentation decreased)
   TDedent   : YAMLToken
 
@@ -97,6 +100,7 @@ Interpolation YAMLToken where
     YSeq _    => "sequence"
     YMap _    => "mapping"
   interpolate TNewline    = "<newline>"
+  interpolate TIndent     = "<indent>"
   interpolate TDedent     = "<dedent>"
   interpolate TEOI        = "end of input"
 

@@ -27,6 +27,35 @@ mutual
 
   flowMap : Bounds -> SnocList (YAMLValue, YAMLValue) -> Rule True YAMLValue
 
+  -- Parse a nested block value (consumes TIndent, parses value, leaves TDedent for caller)
+  -- Returns just the parsed value, caller handles continuation
+  blockNestedValue : Rule True YAMLValue
+  blockNestedValue (B TIndent _ :: xs) (SA r) = succT $ value xs r
+  blockNestedValue xs _ = fail xs
+
+  -- Handle continuation after parsing a nested value in block mapping
+  -- Takes the result from blockNestedValue and continues parsing
+  blockMapAfterNested :
+       YAMLValue
+    -> SnocList (YAMLValue, YAMLValue)
+    -> Res True YAMLToken xs YAMLParseError YAMLValue
+    -> (0 acc : SuffixAcc xs)
+    -> Res True YAMLToken xs YAMLParseError YAMLValue
+  blockMapAfterNested k sv (Succ0 v (B TNewline _ :: B TDedent _ :: B (TScalar k2) _ :: B TColon _ :: ys)) (SA r) =
+    -- After nested block, more pairs at parent level
+    succT $ blockMapAfterColon k2 (sv :< (k, v)) ys r
+  blockMapAfterNested k sv (Succ0 v rest@(B TNewline _ :: B TDedent _ :: ys)) _ =
+    -- End of this mapping level
+    Succ0 (YMap $ sv <>> [(k, v)]) rest
+  blockMapAfterNested k sv (Succ0 v rest@(B TDedent _ :: ys)) _ =
+    -- End of this mapping level (no newline before dedent)
+    Succ0 (YMap $ sv <>> [(k, v)]) rest
+  blockMapAfterNested k sv (Succ0 v ys) _ =
+    -- End of document
+    Succ0 (YMap $ sv <>> [(k, v)]) ys
+  blockMapAfterNested k sv (Fail0 err) _ = Fail0 err
+
+
   -- Parse remaining items in a block sequence (after the first dash was consumed)
   blockSeqItems : SnocList YAMLValue -> Rule True YAMLValue
   blockSeqItems sv xs acc@(SA r) = case value xs acc of
@@ -39,18 +68,29 @@ mutual
   -- k: the key we're parsing the value for
   -- sv: accumulated key-value pairs so far
   blockMapAfterColon : YAMLValue -> SnocList (YAMLValue, YAMLValue) -> Rule True YAMLValue
+  -- Nested block: TNewline followed by TIndent starts nested content
+  -- Use @ pattern to avoid consuming TIndent here, delegate to helper
+  blockMapAfterColon k sv (B TNewline _ :: xs@(B TIndent _ :: _)) (SA r) =
+    succT $ blockMapAfterNested k sv (blockNestedValue xs r) r
+  -- Same level: next key-value pair (value is null)
   blockMapAfterColon k sv (B TNewline _ :: B (TScalar k2) _ :: B TColon _ :: xs) (SA r) =
-    -- Empty value (null), next key-value pair follows
     succT $ blockMapAfterColon k2 (sv :< (k, YNull)) xs r
+  -- End of block: TDedent signals end of this mapping level
+  -- Note: Don't consume TDedent - it may be needed by outer parser
+  blockMapAfterColon k sv (B TNewline _ :: ys@(B TDedent _ :: xs)) (SA r) =
+    Succ0 (YMap $ sv <>> [(k, YNull)]) ys
+  -- End of mapping: just newline
   blockMapAfterColon k sv (B TNewline _ :: xs) (SA r) =
-    -- Empty value (null), end of mapping - consume TNewline
     Succ0 (YMap $ sv <>> [(k, YNull)]) xs
+  -- Value on same line
   blockMapAfterColon k sv xs acc@(SA r) =
-    -- Parse the value
     case value xs acc of
       Succ0 v (B TNewline _ :: B (TScalar k2) _ :: B TColon _ :: ys) =>
         -- Another key-value pair follows
         succT $ blockMapAfterColon k2 (sv :< (k, v)) ys r
+      Succ0 v rest@(B TNewline _ :: B TDedent _ :: ys) =>
+        -- End of this mapping level - leave TDedent for outer parser
+        Succ0 (YMap $ sv <>> [(k, v)]) rest
       Succ0 v ys =>
         -- No more key-value pairs
         Succ0 (YMap $ sv <>> [(k, v)]) ys
@@ -91,9 +131,10 @@ mutual
 --          Entry Point
 --------------------------------------------------------------------------------
 
-||| Skip leading whitespace tokens (TNewline, TDedent)
+||| Skip leading whitespace tokens (TNewline, TIndent, TDedent)
 skipLeadingWs : List (Bounded YAMLToken) -> List (Bounded YAMLToken)
 skipLeadingWs (B TNewline _ :: xs) = skipLeadingWs xs
+skipLeadingWs (B TIndent _ :: xs) = skipLeadingWs xs
 skipLeadingWs (B TDedent _ :: xs) = skipLeadingWs xs
 skipLeadingWs xs = xs
 

@@ -152,17 +152,37 @@ prop_block_seq_single_string : Property
 prop_block_seq_single_string = parseOk "- hello" (YSeq [YStr "hello"])
 
 prop_block_seq_two_items : Property
-prop_block_seq_two_items = parseOk "- 1\n- 2" (YSeq [YInt 1, YInt 2])
+prop_block_seq_two_items = parseOk
+  """
+  - 1
+  - 2
+  """
+  (YSeq [YInt 1, YInt 2])
 
 prop_block_seq_three_items : Property
-prop_block_seq_three_items = parseOk "- 1\n- 2\n- 3" (YSeq [YInt 1, YInt 2, YInt 3])
+prop_block_seq_three_items = parseOk
+  """
+  - 1
+  - 2
+  - 3
+  """
+  (YSeq [YInt 1, YInt 2, YInt 3])
 
 prop_block_seq_mixed_types : Property
-prop_block_seq_mixed_types = parseOk "- 1\n- true\n- hello"
+prop_block_seq_mixed_types = parseOk
+  """
+  - 1
+  - true
+  - hello
+  """
   (YSeq [YInt 1, YBool True, YStr "hello"])
 
 prop_block_seq_nested_flow : Property
-prop_block_seq_nested_flow = parseOk "- [1, 2]\n- [3, 4]"
+prop_block_seq_nested_flow = parseOk
+  """
+  - [1, 2]
+  - [3, 4]
+  """
   (YSeq [YSeq [YInt 1, YInt 2], YSeq [YInt 3, YInt 4]])
 
 --------------------------------------------------------------------------------
@@ -174,15 +194,29 @@ prop_block_map_single = parseOk "name: Alice"
   (YMap [(YStr "name", YStr "Alice")])
 
 prop_block_map_two : Property
-prop_block_map_two = parseOk "name: Alice\nage: 30"
+prop_block_map_two = parseOk
+  """
+  name: Alice
+  age: 30
+  """
   (YMap [(YStr "name", YStr "Alice"), (YStr "age", YInt 30)])
 
 prop_block_map_three : Property
-prop_block_map_three = parseOk "a: 1\nb: 2\nc: 3"
+prop_block_map_three = parseOk
+  """
+  a: 1
+  b: 2
+  c: 3
+  """
   (YMap [(YStr "a", YInt 1), (YStr "b", YInt 2), (YStr "c", YInt 3)])
 
 prop_block_map_mixed_values : Property
-prop_block_map_mixed_values = parseOk "str: hello\nnum: 42\nbool: true"
+prop_block_map_mixed_values = parseOk
+  """
+  str: hello
+  num: 42
+  bool: true
+  """
   (YMap [(YStr "str", YStr "hello"), (YStr "num", YInt 42), (YStr "bool", YBool True)])
 
 prop_block_map_flow_value : Property
@@ -190,12 +224,74 @@ prop_block_map_flow_value = parseOk "items: [1, 2, 3]"
   (YMap [(YStr "items", YSeq [YInt 1, YInt 2, YInt 3])])
 
 prop_block_map_empty_value : Property
-prop_block_map_empty_value = parseOk "empty:\nnext: 1"
+prop_block_map_empty_value = parseOk
+  """
+  empty:
+  next: 1
+  """
   (YMap [(YStr "empty", YNull), (YStr "next", YInt 1)])
 
 prop_block_map_empty_value_end : Property
 prop_block_map_empty_value_end = parseOk "key:\n"
   (YMap [(YStr "key", YNull)])
+
+--------------------------------------------------------------------------------
+--          Nested Block Structure Tests
+--------------------------------------------------------------------------------
+
+-- Simple nested mapping: parent with one nested child
+prop_nested_map_simple : Property
+prop_nested_map_simple = parseOk
+  """
+  parent:
+    child: value
+  """
+  (YMap [(YStr "parent", YMap [(YStr "child", YStr "value")])])
+
+-- Nested mapping with sibling at parent level
+prop_nested_map_with_sibling : Property
+prop_nested_map_with_sibling = parseOk
+  """
+  parent:
+    child: 1
+  sibling: 2
+  """
+  (YMap [(YStr "parent", YMap [(YStr "child", YInt 1)]),
+         (YStr "sibling", YInt 2)])
+
+-- Nested mapping with multiple children, then sibling at parent level
+-- This tests TDedent handling after nested block ends
+prop_nested_map_children_then_sibling : Property
+prop_nested_map_children_then_sibling = parseOk
+  """
+  parent:
+    a: 1
+    b: 2
+  sibling: 3
+  """
+  (YMap [(YStr "parent", YMap [(YStr "a", YInt 1), (YStr "b", YInt 2)]),
+         (YStr "sibling", YInt 3)])
+
+-- Nested mapping with multiple children
+prop_nested_map_multiple_children : Property
+prop_nested_map_multiple_children = parseOk
+  """
+  parent:
+    a: 1
+    b: 2
+  """
+  (YMap [(YStr "parent", YMap [(YStr "a", YInt 1), (YStr "b", YInt 2)])])
+
+-- Nested mapping with multiple children
+prop_nested_nested_map_simple : Property
+prop_nested_nested_map_simple = parseOk
+  """
+  grandparent:
+    a: 1
+    parent:
+      b: 2
+  """
+  (YMap [(YStr "grandparent", YMap [(YStr "a", YInt 1), (YStr "parent", YMap [(YStr "b", YInt 2)])])])
 
 --------------------------------------------------------------------------------
 --          Whitespace and Comments
@@ -211,7 +307,12 @@ prop_comment_inline : Property
 prop_comment_inline = parseOk "42 # this is a comment" (YInt 42)
 
 prop_comment_line : Property
-prop_comment_line = parseOk "# comment\n42" (YInt 42)
+prop_comment_line = parseOk
+  """
+  # comment
+  42
+  """
+  (YInt 42)
 
 --------------------------------------------------------------------------------
 --          Main Function
@@ -265,6 +366,11 @@ properties =
     , ("prop_block_map_flow_value", prop_block_map_flow_value)
     , ("prop_block_map_empty_value", prop_block_map_empty_value)
     , ("prop_block_map_empty_value_end", prop_block_map_empty_value_end)
+    , ("prop_nested_map_simple", prop_nested_map_simple)
+    , ("prop_nested_map_with_sibling", prop_nested_map_with_sibling)
+    , ("prop_nested_map_children_then_sibling", prop_nested_map_children_then_sibling)
+    , ("prop_nested_map_multiple_children", prop_nested_map_multiple_children)
+    , ("prop_nested_nested_map_simple", prop_nested_nested_map_simple)
     , ("prop_trailing_whitespace", prop_trailing_whitespace)
     , ("prop_leading_whitespace", prop_leading_whitespace)
     , ("prop_comment_inline", prop_comment_inline)
