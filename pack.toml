@@ -29,6 +29,12 @@ ipkg = "test.ipkg"
 type = "local"
 path = "yaml"
 ipkg = "parser-yaml.ipkg"
+test = "test/test.ipkg"
+
+[custom.all.parser-yaml-test]
+type = "local"
+path = "yaml/test"
+ipkg = "test.ipkg"
 
 [custom.all.parser-json]
 type = "local"

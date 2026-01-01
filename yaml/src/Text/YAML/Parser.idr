@@ -62,10 +62,16 @@ mutual
 --          Entry Point
 --------------------------------------------------------------------------------
 
+||| Skip leading whitespace tokens (TNewline, TDedent)
+skipLeadingWs : List (Bounded YAMLToken) -> List (Bounded YAMLToken)
+skipLeadingWs (B TNewline _ :: xs) = skipLeadingWs xs
+skipLeadingWs (B TDedent _ :: xs) = skipLeadingWs xs
+skipLeadingWs xs = xs
+
 export
 parseYAML : Origin -> String -> Either (ParseError YAMLParseError) YAMLValue
 parseYAML o str = case lexYAML str of
-  Right ts => case value ts suffixAcc of
+  Right ts => case value (skipLeadingWs ts) suffixAcc of
     Fail0 x           => Left (toParseError o str x)
     Succ0 v []        => Right v
     Succ0 v [B TEOI _] => Right v

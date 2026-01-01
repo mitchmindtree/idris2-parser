@@ -123,22 +123,14 @@ plainScalarFlow sc [] = Succ (cast $ trimSpaces sc) []
 --          Scalar Value Interpretation
 --------------------------------------------------------------------------------
 
-||| Try to parse a string as an integer (decimal, hex, or octal)
-tryInteger : String -> Maybe Integer
-tryInteger s = case unpack s of
+||| Try to parse YAML-specific integer formats (hex, octal)
+||| Standard decimal integers are handled by `tryNumber`
+tryYamlInteger : String -> Maybe Integer
+tryYamlInteger s = case unpack s of
   '0' :: 'x' :: rest => parseHex rest
   '0' :: 'o' :: rest => parseOct rest
-  '-' :: rest        => negate <$> parseDec rest
-  '+' :: rest        => parseDec rest
-  cs                 => parseDec cs
+  _                  => Nothing
   where
-    parseDec : List Char -> Maybe Integer
-    parseDec [] = Nothing
-    parseDec cs =
-      if all isDigit cs
-        then Just $ foldl (\acc, c => acc * 10 + cast (ord c - ord '0')) 0 cs
-        else Nothing
-
     parseHex : List Char -> Maybe Integer
     parseHex [] = Nothing
     parseHex cs =
@@ -153,42 +145,51 @@ tryInteger s = case unpack s of
         then Just $ foldl (\acc, c => acc * 8 + cast (ord c - ord '0')) 0 cs
         else Nothing
 
-||| Try to parse a string as a float
-tryFloat : String -> Maybe Double
-tryFloat s = case s of
-  ".nan"  => Just (0.0 / 0.0)
-  ".NaN"  => Just (0.0 / 0.0)
-  ".NAN"  => Just (0.0 / 0.0)
-  ".inf"  => Just (1.0 / 0.0)
-  ".Inf"  => Just (1.0 / 0.0)
-  ".INF"  => Just (1.0 / 0.0)
-  "+.inf" => Just (1.0 / 0.0)
-  "+.Inf" => Just (1.0 / 0.0)
-  "+.INF" => Just (1.0 / 0.0)
-  "-.inf" => Just (negate $ 1.0 / 0.0)
-  "-.Inf" => Just (negate $ 1.0 / 0.0)
-  "-.INF" => Just (negate $ 1.0 / 0.0)
-  _       => if any (\c => c == '.' || c == 'e' || c == 'E') (unpack s)
-               then Just (cast s)
-               else Nothing
+||| Try to parse a standard numeric value using the `number` shifter.
+||| Returns Just if the entire string is a valid number, Nothing otherwise.
+tryNumber : String -> Maybe YAMLValue
+tryNumber s =
+  let cs = unpack s
+   in case number [<] cs of
+        Succ [] => -- Consumed all characters, it's a valid number
+          if any (\c => c == '.' || c == 'e' || c == 'E') cs
+            then Just (YFloat (cast s))
+            else Just (YInt (cast s))
+        _ => Nothing -- Either failed or didn't consume all
 
 ||| Interpret a plain scalar string as a YAML value
 interpretScalar : String -> YAMLValue
+-- Null values
 interpretScalar "" = YNull
 interpretScalar "~" = YNull
 interpretScalar "null" = YNull
 interpretScalar "Null" = YNull
 interpretScalar "NULL" = YNull
+-- Boolean values
 interpretScalar "true" = YBool True
 interpretScalar "True" = YBool True
 interpretScalar "TRUE" = YBool True
 interpretScalar "false" = YBool False
 interpretScalar "False" = YBool False
 interpretScalar "FALSE" = YBool False
-interpretScalar s = case tryInteger s of
+-- Special float values (YAML-specific)
+interpretScalar ".nan" = YFloat (0.0 / 0.0)
+interpretScalar ".NaN" = YFloat (0.0 / 0.0)
+interpretScalar ".NAN" = YFloat (0.0 / 0.0)
+interpretScalar ".inf" = YFloat (1.0 / 0.0)
+interpretScalar ".Inf" = YFloat (1.0 / 0.0)
+interpretScalar ".INF" = YFloat (1.0 / 0.0)
+interpretScalar "+.inf" = YFloat (1.0 / 0.0)
+interpretScalar "+.Inf" = YFloat (1.0 / 0.0)
+interpretScalar "+.INF" = YFloat (1.0 / 0.0)
+interpretScalar "-.inf" = YFloat (negate $ 1.0 / 0.0)
+interpretScalar "-.Inf" = YFloat (negate $ 1.0 / 0.0)
+interpretScalar "-.INF" = YFloat (negate $ 1.0 / 0.0)
+-- Numeric values
+interpretScalar s = case tryYamlInteger s of
   Just i  => YInt i
-  Nothing => case tryFloat s of
-    Just d  => YFloat d
+  Nothing => case tryNumber s of
+    Just v  => v
     Nothing => YStr s
 
 --------------------------------------------------------------------------------
