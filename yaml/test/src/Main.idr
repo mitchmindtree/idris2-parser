@@ -151,6 +151,52 @@ prop_block_seq_single = parseOk "- 1" (YSeq [YInt 1])
 prop_block_seq_single_string : Property
 prop_block_seq_single_string = parseOk "- hello" (YSeq [YStr "hello"])
 
+prop_block_seq_two_items : Property
+prop_block_seq_two_items = parseOk "- 1\n- 2" (YSeq [YInt 1, YInt 2])
+
+prop_block_seq_three_items : Property
+prop_block_seq_three_items = parseOk "- 1\n- 2\n- 3" (YSeq [YInt 1, YInt 2, YInt 3])
+
+prop_block_seq_mixed_types : Property
+prop_block_seq_mixed_types = parseOk "- 1\n- true\n- hello"
+  (YSeq [YInt 1, YBool True, YStr "hello"])
+
+prop_block_seq_nested_flow : Property
+prop_block_seq_nested_flow = parseOk "- [1, 2]\n- [3, 4]"
+  (YSeq [YSeq [YInt 1, YInt 2], YSeq [YInt 3, YInt 4]])
+
+--------------------------------------------------------------------------------
+--          Block Mapping Tests
+--------------------------------------------------------------------------------
+
+prop_block_map_single : Property
+prop_block_map_single = parseOk "name: Alice"
+  (YMap [(YStr "name", YStr "Alice")])
+
+prop_block_map_two : Property
+prop_block_map_two = parseOk "name: Alice\nage: 30"
+  (YMap [(YStr "name", YStr "Alice"), (YStr "age", YInt 30)])
+
+prop_block_map_three : Property
+prop_block_map_three = parseOk "a: 1\nb: 2\nc: 3"
+  (YMap [(YStr "a", YInt 1), (YStr "b", YInt 2), (YStr "c", YInt 3)])
+
+prop_block_map_mixed_values : Property
+prop_block_map_mixed_values = parseOk "str: hello\nnum: 42\nbool: true"
+  (YMap [(YStr "str", YStr "hello"), (YStr "num", YInt 42), (YStr "bool", YBool True)])
+
+prop_block_map_flow_value : Property
+prop_block_map_flow_value = parseOk "items: [1, 2, 3]"
+  (YMap [(YStr "items", YSeq [YInt 1, YInt 2, YInt 3])])
+
+prop_block_map_empty_value : Property
+prop_block_map_empty_value = parseOk "empty:\nnext: 1"
+  (YMap [(YStr "empty", YNull), (YStr "next", YInt 1)])
+
+prop_block_map_empty_value_end : Property
+prop_block_map_empty_value_end = parseOk "key:\n"
+  (YMap [(YStr "key", YNull)])
+
 --------------------------------------------------------------------------------
 --          Whitespace and Comments
 --------------------------------------------------------------------------------
@@ -208,6 +254,17 @@ properties =
     , ("prop_map_nested", prop_map_nested)
     , ("prop_block_seq_single", prop_block_seq_single)
     , ("prop_block_seq_single_string", prop_block_seq_single_string)
+    , ("prop_block_seq_two_items", prop_block_seq_two_items)
+    , ("prop_block_seq_three_items", prop_block_seq_three_items)
+    , ("prop_block_seq_mixed_types", prop_block_seq_mixed_types)
+    , ("prop_block_seq_nested_flow", prop_block_seq_nested_flow)
+    , ("prop_block_map_single", prop_block_map_single)
+    , ("prop_block_map_two", prop_block_map_two)
+    , ("prop_block_map_three", prop_block_map_three)
+    , ("prop_block_map_mixed_values", prop_block_map_mixed_values)
+    , ("prop_block_map_flow_value", prop_block_map_flow_value)
+    , ("prop_block_map_empty_value", prop_block_map_empty_value)
+    , ("prop_block_map_empty_value_end", prop_block_map_empty_value_end)
     , ("prop_trailing_whitespace", prop_trailing_whitespace)
     , ("prop_leading_whitespace", prop_leading_whitespace)
     , ("prop_comment_inline", prop_comment_inline)

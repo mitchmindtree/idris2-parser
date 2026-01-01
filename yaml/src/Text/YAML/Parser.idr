@@ -27,12 +27,41 @@ mutual
 
   flowMap : Bounds -> SnocList (YAMLValue, YAMLValue) -> Rule True YAMLValue
 
+  -- Parse remaining items in a block sequence (after the first dash was consumed)
+  blockSeqItems : SnocList YAMLValue -> Rule True YAMLValue
+  blockSeqItems sv xs acc@(SA r) = case value xs acc of
+    Succ0 v (B TNewline _ :: B TDash _ :: ys) => succT $ blockSeqItems (sv :< v) ys r
+    Succ0 v (B TDash _ :: ys)                 => succT $ blockSeqItems (sv :< v) ys r
+    Succ0 v ys                                => Succ0 (YSeq $ sv <>> [v]) ys
+    Fail0 err                                 => Fail0 err
+
+  -- Parse value after colon in block mapping, then check for more pairs
+  -- k: the key we're parsing the value for
+  -- sv: accumulated key-value pairs so far
+  blockMapAfterColon : YAMLValue -> SnocList (YAMLValue, YAMLValue) -> Rule True YAMLValue
+  blockMapAfterColon k sv (B TNewline _ :: B (TScalar k2) _ :: B TColon _ :: xs) (SA r) =
+    -- Empty value (null), next key-value pair follows
+    succT $ blockMapAfterColon k2 (sv :< (k, YNull)) xs r
+  blockMapAfterColon k sv (B TNewline _ :: xs) (SA r) =
+    -- Empty value (null), end of mapping - consume TNewline
+    Succ0 (YMap $ sv <>> [(k, YNull)]) xs
+  blockMapAfterColon k sv xs acc@(SA r) =
+    -- Parse the value
+    case value xs acc of
+      Succ0 v (B TNewline _ :: B (TScalar k2) _ :: B TColon _ :: ys) =>
+        -- Another key-value pair follows
+        succT $ blockMapAfterColon k2 (sv :< (k, v)) ys r
+      Succ0 v ys =>
+        -- No more key-value pairs
+        Succ0 (YMap $ sv <>> [(k, v)]) ys
+      Fail0 err => Fail0 err
+
   value : Rule True YAMLValue
-  -- Block sequence: single item (multi-item requires complex suffix proof threading)
-  value (B TDash _ :: xs) (SA r) =
-    case succT $ value xs r of
-      Succ0 v ys => Succ0 (YSeq [v]) ys
-      Fail0 err  => Fail0 err
+  -- Block sequence: parse first dash, then delegate to blockSeqItems
+  value (B TDash _ :: xs) (SA r) = succT $ blockSeqItems [<] xs r
+  -- Block mapping: scalar followed by colon, delegate to blockMapAfterColon
+  value (B (TScalar k) _ :: B TColon _ :: xs) (SA r) = succT $ blockMapAfterColon k [<] xs r
+  -- Plain scalar value
   value (B (TScalar v) _ :: xs) _ = Succ0 v xs
   value (B TLBracket b :: B TRBracket _ :: xs) _ = Succ0 (YSeq []) xs
   value (B TLBracket b :: xs) (SA r) = succT $ flowSeq b [<] xs r
