@@ -358,6 +358,16 @@ interpretScalar s = case tryYamlInteger s of
 
 ||| Lex a single token in block context
 blockTok : Tok True e YAMLToken
+-- Document markers (must come before dash handling)
+blockTok ('-' :: '-' :: '-' :: ' ' :: xs)  = Succ TDocStart (' ' :: xs)
+blockTok ('-' :: '-' :: '-' :: '\n' :: xs) = Succ TDocStart ('\n' :: xs)
+blockTok ('-' :: '-' :: '-' :: '\r' :: xs) = Succ TDocStart ('\r' :: xs)
+blockTok ('-' :: '-' :: '-' :: [])         = Succ TDocStart []
+blockTok ('.' :: '.' :: '.' :: ' ' :: xs)  = Succ TDocEnd (' ' :: xs)
+blockTok ('.' :: '.' :: '.' :: '\n' :: xs) = Succ TDocEnd ('\n' :: xs)
+blockTok ('.' :: '.' :: '.' :: '\r' :: xs) = Succ TDocEnd ('\r' :: xs)
+blockTok ('.' :: '.' :: '.' :: [])         = Succ TDocEnd []
+-- Sequence item indicator
 blockTok ('-' :: ' ' :: xs)       = Succ TDash (' ' :: xs)
 blockTok ('-' :: '\n' :: xs)      = Succ TDash ('\n' :: xs)
 blockTok ('-' :: '\r' :: xs)      = Succ TDash ('\r' :: xs)

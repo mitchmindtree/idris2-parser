@@ -180,29 +180,33 @@ mutual
 --          Entry Point
 --------------------------------------------------------------------------------
 
-||| Skip leading whitespace tokens (TNewline, TIndent, TDedent)
-skipLeadingWs : List (Bounded YAMLToken) -> List (Bounded YAMLToken)
-skipLeadingWs (B TNewline _ :: xs) = skipLeadingWs xs
-skipLeadingWs (B TIndent _ :: xs) = skipLeadingWs xs
-skipLeadingWs (B TDedent _ :: xs) = skipLeadingWs xs
-skipLeadingWs xs = xs
-
-||| Skip trailing whitespace tokens before EOI
-skipTrailingWs : List (Bounded YAMLToken) -> List (Bounded YAMLToken)
-skipTrailingWs [B TNewline _, B TEOI b] = [B TEOI b]
-skipTrailingWs [B TDedent _, B TEOI b] = [B TEOI b]
-skipTrailingWs [B TNewline _, B TDedent _, B TEOI b] = [B TEOI b]
-skipTrailingWs xs = xs
-
+||| Parse all YAML documents from a string (YAML streams can contain multiple documents)
 export
-parseYAML : Origin -> String -> Either (ParseError YAMLParseError) YAMLValue
+parseYAML : Origin -> String -> Either (ParseError YAMLParseError) (SnocList YAMLValue)
 parseYAML o str = case lexYAML str of
-  Right ts => case value (skipLeadingWs ts) suffixAcc of
-    Fail0 x           => Left (toParseError o str x)
-    Succ0 v []        => Right v
-    Succ0 v [B TEOI _] => Right v
-    Succ0 v remaining => case skipTrailingWs remaining of
-      [B TEOI _] => Right v
-      (x :: xs)  => leftErr o str $ unexpected x
-      []         => Right v
+  Right ts => go [<] ts suffixAcc
   Left err => Left (toParseError o str err)
+  where
+    go : SnocList YAMLValue
+      -> (ts : List (Bounded YAMLToken))
+      -> (0 acc : SuffixAcc ts)
+      -> Either (ParseError YAMLParseError) (SnocList YAMLValue)
+    -- Base cases: end of stream
+    go sx [] _ = Right sx
+    go sx [B TEOI _] _ = Right sx
+    -- Skip whitespace/doc markers at start of each iteration
+    go sx (B TNewline _ :: ts) (SA r) = go sx ts r
+    go sx (B TIndent _ :: ts) (SA r) = go sx ts r
+    go sx (B TDedent _ :: ts) (SA r) = go sx ts r
+    go sx (B TDocStart _ :: ts) (SA r) = go sx ts r
+    go sx (B TDocEnd _ :: ts) (SA r) = go sx ts r
+    -- Parse a document value, then skip to next doc boundary
+    go sx ts (SA r) = case value ts (SA r) of
+      Fail0 err => Left (toParseError o str err)
+      Succ0 v [] => Right (sx :< v)
+      Succ0 v [B TEOI _] => Right (sx :< v)
+      Succ0 v (B TNewline _ :: ts2) => go (sx :< v) ts2 r
+      Succ0 v (B TDedent _ :: ts2) => go (sx :< v) ts2 r
+      Succ0 v (B TDocEnd _ :: ts2) => go (sx :< v) ts2 r
+      Succ0 v (B TDocStart _ :: ts2) => go (sx :< v) ts2 r
+      Succ0 v ts2 => go (sx :< v) ts2 r

@@ -1,5 +1,6 @@
 module Main
 
+import Data.SnocList
 import Hedgehog
 import Text.YAML
 
@@ -9,15 +10,21 @@ import Text.YAML
 --          Helpers
 --------------------------------------------------------------------------------
 
+-- Test single-document parsing (most common case)
 parseOk : String -> YAMLValue -> Property
 parseOk s expected =
+  property1 $ parseYAML Virtual s === Right [< expected]
+
+-- Test multi-document parsing
+parseDocsOk : String -> SnocList YAMLValue -> Property
+parseDocsOk s expected =
   property1 $ parseYAML Virtual s === Right expected
 
 parseErr : String -> Property
 parseErr s =
   property1 $ case parseYAML Virtual s of
     Left _  => True === True
-    Right v => annotate ("Expected error but got: " ++ show v) >> failure
+    Right v => annotate ("Expected error but got: " ++ show (v <>> [])) >> failure
 
 --------------------------------------------------------------------------------
 --          Null Tests
@@ -524,6 +531,89 @@ prop_block_preserve_indent = parseOk "key: |\n  line1\n    indented\n  line2\n"
   (YMap [(YStr "key", YStr "line1\n  indented\nline2\n")])
 
 --------------------------------------------------------------------------------
+--          Document Marker Tests
+--------------------------------------------------------------------------------
+
+-- Single document with explicit start marker
+prop_doc_explicit_start : Property
+prop_doc_explicit_start = parseOk
+  """
+  ---
+  value: 1
+  """
+  (YMap [(YStr "value", YInt 1)])
+
+-- Document start with space after
+prop_doc_start_space : Property
+prop_doc_start_space = parseOk "--- \nvalue: 1\n"
+  (YMap [(YStr "value", YInt 1)])
+
+-- Document end marker (single doc)
+prop_doc_end : Property
+prop_doc_end = parseOk
+  """
+  value: 1
+  ...
+  """
+  (YMap [(YStr "value", YInt 1)])
+
+-- Document with both start and end markers
+prop_doc_start_and_end : Property
+prop_doc_start_and_end = parseOk
+  """
+  ---
+  value: 1
+  ...
+  """
+  (YMap [(YStr "value", YInt 1)])
+
+-- Multiple documents
+prop_multi_doc_two : Property
+prop_multi_doc_two = parseDocsOk
+  """
+  ---
+  a: 1
+  ---
+  b: 2
+  """
+  [< YMap [(YStr "a", YInt 1)], YMap [(YStr "b", YInt 2)]]
+
+-- Multiple documents with end marker
+prop_multi_doc_with_end : Property
+prop_multi_doc_with_end = parseDocsOk
+  """
+  ---
+  a: 1
+  ...
+  ---
+  b: 2
+  """
+  [< YMap [(YStr "a", YInt 1)], YMap [(YStr "b", YInt 2)]]
+
+-- Three documents
+prop_multi_doc_three : Property
+prop_multi_doc_three = parseDocsOk
+  """
+  ---
+  1
+  ---
+  2
+  ---
+  3
+  """
+  [< YInt 1, YInt 2, YInt 3]
+
+-- First doc without marker (implicit start)
+prop_multi_doc_first_implicit : Property
+prop_multi_doc_first_implicit = parseDocsOk
+  """
+  a: 1
+  ---
+  b: 2
+  """
+  [< YMap [(YStr "a", YInt 1)], YMap [(YStr "b", YInt 2)]]
+
+--------------------------------------------------------------------------------
 --          Main Function
 --------------------------------------------------------------------------------
 
@@ -614,6 +704,14 @@ properties =
     , ("prop_block_nested", prop_block_nested)
     , ("prop_block_deep_indent", prop_block_deep_indent)
     , ("prop_block_preserve_indent", prop_block_preserve_indent)
+    , ("prop_doc_explicit_start", prop_doc_explicit_start)
+    , ("prop_doc_start_space", prop_doc_start_space)
+    , ("prop_doc_end", prop_doc_end)
+    , ("prop_doc_start_and_end", prop_doc_start_and_end)
+    , ("prop_multi_doc_two", prop_multi_doc_two)
+    , ("prop_multi_doc_with_end", prop_multi_doc_with_end)
+    , ("prop_multi_doc_three", prop_multi_doc_three)
+    , ("prop_multi_doc_first_implicit", prop_multi_doc_first_implicit)
     ]
 
 main : IO ()

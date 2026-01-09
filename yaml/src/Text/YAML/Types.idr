@@ -80,6 +80,12 @@ data YAMLToken : Type where
   ||| End of input
   TEOI      : YAMLToken
 
+  ||| Document start marker '---'
+  TDocStart : YAMLToken
+
+  ||| Document end marker '...'
+  TDocEnd   : YAMLToken
+
 %runElab derive "YAMLToken" [Eq, Show]
 
 export
@@ -103,6 +109,8 @@ Interpolation YAMLToken where
   interpolate TIndent     = "<indent>"
   interpolate TDedent     = "<dedent>"
   interpolate TEOI        = "end of input"
+  interpolate TDocStart   = "'---'"
+  interpolate TDocEnd     = "'...'"
 
 --------------------------------------------------------------------------------
 --          Errors
