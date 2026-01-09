@@ -297,23 +297,13 @@ mutual
 ||| Standard decimal integers are handled by `tryNumber`
 tryYamlInteger : String -> Maybe Integer
 tryYamlInteger s = case unpack s of
-  '0' :: 'x' :: rest => parseHex rest
-  '0' :: 'o' :: rest => parseOct rest
+  '0' :: 'x' :: rest => case tok (hex {e=()}) rest of
+    Succ n [] => Just (cast n)
+    _         => Nothing
+  '0' :: 'o' :: rest => case tok (oct {e=()}) rest of
+    Succ n [] => Just (cast n)
+    _         => Nothing
   _                  => Nothing
-  where
-    parseHex : List Char -> Maybe Integer
-    parseHex [] = Nothing
-    parseHex cs =
-      if all isHexDigit cs
-        then Just $ foldl (\acc, c => acc * 16 + cast (hexDigit c)) 0 cs
-        else Nothing
-
-    parseOct : List Char -> Maybe Integer
-    parseOct [] = Nothing
-    parseOct cs =
-      if all (\c => c >= '0' && c <= '7') cs
-        then Just $ foldl (\acc, c => acc * 8 + cast (ord c - ord '0')) 0 cs
-        else Nothing
 
 ||| Try to parse a standard numeric value using the `number` shifter.
 ||| Returns Just if the entire string is a valid number, Nothing otherwise.
