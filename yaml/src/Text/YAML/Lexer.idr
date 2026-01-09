@@ -85,11 +85,11 @@ sqString sc []                   = eoiAt p
 --          Plain Scalars
 --------------------------------------------------------------------------------
 
-trimSpaces : SnocList Char -> SnocList Char
-trimSpaces [<]          = [<]
-trimSpaces (sx :< ' ')  = trimSpaces sx
-trimSpaces (sx :< '\t') = trimSpaces sx
-trimSpaces sx           = sx
+rtrimLine : SnocList Char -> SnocList Char
+rtrimLine [<]          = [<]
+rtrimLine (sx :< ' ')  = rtrimLine sx
+rtrimLine (sx :< '\t') = rtrimLine sx
+rtrimLine sx           = sx
 
 ||| Characters that terminate a plain scalar in block context
 isPlainEndBlock : Char -> Bool
@@ -112,33 +112,42 @@ isPlainEndFlow c    = isPlainEndBlock c
 plainScalarBlock : SnocList Char -> AutoTok e String
 plainScalarBlock sc (c :: xs) =
   if isPlainEndBlock c
-    then Succ (cast $ trimSpaces sc) (c :: xs)
+    then Succ (cast $ rtrimLine sc) (c :: xs)
     else plainScalarBlock (sc :< c) xs
-plainScalarBlock sc [] = Succ (cast $ trimSpaces sc) []
+plainScalarBlock sc [] = Succ (cast $ rtrimLine sc) []
 
 ||| Read a plain (unquoted) scalar in flow context
 plainScalarFlow : SnocList Char -> AutoTok e String
 plainScalarFlow sc (c :: xs) =
   if isPlainEndFlow c
-    then Succ (cast $ trimSpaces sc) (c :: xs)
+    then Succ (cast $ rtrimLine sc) (c :: xs)
     else plainScalarFlow (sc :< c) xs
-plainScalarFlow sc [] = Succ (cast $ trimSpaces sc) []
+plainScalarFlow sc [] = Succ (cast $ rtrimLine sc) []
 
 --------------------------------------------------------------------------------
 --          Block Scalars
 --------------------------------------------------------------------------------
 
-||| Apply chomping to trailing content
+||| Strip trailing empty strings from SnocList, returning count removed
+stripTrailingEmpty : SnocList String -> (SnocList String, Nat)
+stripTrailingEmpty [<] = ([<], 0)
+stripTrailingEmpty (sx :< "") = let (sx', n) = stripTrailingEmpty sx in (sx', S n)
+stripTrailingEmpty sx = (sx, 0)
+
+||| Apply chomping to produce final block scalar content
+finalizeContent : Chomping -> (trailingCount : Nat) -> (content : String) -> String
+finalizeContent Strip _ content = content
+finalizeContent Clip  _ "" = ""
+finalizeContent Clip  _ content = content ++ "\n"
+finalizeContent Keep  n "" = pack $ replicate n '\n'
+finalizeContent Keep  n content = content ++ pack (replicate (S n) '\n')
+
+||| Apply chomping to literal block scalar lines
 applyChomping : Chomping -> SnocList String -> String
 applyChomping chomp lines =
-  let lineList = lines <>> []
-      content = concat $ intersperse "\n" lineList
-      withNl = if content == "" then "" else content ++ "\n"
-   in case chomp of
-        Strip => pack $ reverse $ dropWhile (== '\n') $ reverse $ unpack withNl
-        Clip  => let trimmed = pack $ reverse $ dropWhile (== '\n') $ reverse $ unpack withNl
-                  in if trimmed == "" then "" else trimmed ++ "\n"
-        Keep  => withNl
+  let (stripped, trailingCount) = stripTrailingEmpty lines
+      content = concat $ intersperse "\n" (stripped <>> [])
+   in finalizeContent chomp trailingCount content
 
 ||| Check if a line has more indentation (for folded scalars)
 isMoreIndented : String -> Bool
@@ -146,28 +155,31 @@ isMoreIndented s = case unpack s of
   (' ' :: _) => True
   _          => False
 
-||| Fold lines for folded block scalar
+||| Fold lines for folded block scalar (tail-recursive with accumulator)
+||| Returns folded content WITHOUT trailing newline (caller adds based on chomping)
 foldLines : List String -> String
-foldLines [] = ""
-foldLines [x] = x ++ "\n"
-foldLines (x :: y :: rest) =
-  if x == ""
-    then x ++ "\n" ++ foldLines (y :: rest)
-    else if isMoreIndented x || isMoreIndented y
-      then x ++ "\n" ++ foldLines (y :: rest)
-      else if y == ""
-        then x ++ "\n" ++ foldLines (y :: rest)
-        else x ++ " " ++ foldLines (y :: rest)
+foldLines = go [<]
+  where
+    -- Append string chars to SnocList
+    appendStr : SnocList Char -> String -> SnocList Char
+    appendStr acc s = foldl (:<) acc (unpack s)
 
-||| Apply folding and chomping
+    go : SnocList Char -> List String -> String
+    go acc [] = cast acc
+    go acc [x] = cast (appendStr acc x)
+    go acc (x :: y :: rest) =
+      let accX = appendStr acc x
+          sep = if x == "" || isMoreIndented x || isMoreIndented y || y == ""
+                  then '\n'
+                  else ' '
+       in go (accX :< sep) (y :: rest)
+
+||| Apply folding and chomping to folded block scalar lines
 applyFolded : Chomping -> SnocList String -> String
 applyFolded chomp lines =
-  let content = foldLines (lines <>> [])
-   in case chomp of
-        Strip => pack $ reverse $ dropWhile (== '\n') $ reverse $ unpack content
-        Clip  => let trimmed = pack $ reverse $ dropWhile (== '\n') $ reverse $ unpack content
-                  in if trimmed == "" then "" else trimmed ++ "\n"
-        Keep  => content
+  let (stripped, trailingCount) = stripTrailingEmpty lines
+      content = foldLines (stripped <>> [])
+   in finalizeContent chomp trailingCount content
 
 mutual
   ||| Block scalar content collection - structural recursion on input list
