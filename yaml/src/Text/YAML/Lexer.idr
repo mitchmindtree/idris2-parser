@@ -1,7 +1,9 @@
 module Text.YAML.Lexer
 
+import Data.List
 import Data.List1
 import Data.SnocList
+import Data.String
 import Text.Parse.Manual
 import Text.YAML.Types
 
@@ -18,6 +20,9 @@ data FlowCtxt : Type where
   NoFlow   : FlowCtxt
   ||| In a flow collection at given depth
   InFlow   : Nat -> FlowCtxt
+
+||| Chomping behavior for block scalars
+data Chomping = Strip | Clip | Keep
 
 --------------------------------------------------------------------------------
 --          String Literals
@@ -120,6 +125,154 @@ plainScalarFlow sc (c :: xs) =
 plainScalarFlow sc [] = Succ (cast $ trimSpaces sc) []
 
 --------------------------------------------------------------------------------
+--          Block Scalars
+--------------------------------------------------------------------------------
+
+||| Apply chomping to trailing content
+applyChomping : Chomping -> SnocList String -> String
+applyChomping chomp lines =
+  let lineList = lines <>> []
+      content = concat $ intersperse "\n" lineList
+      withNl = if content == "" then "" else content ++ "\n"
+   in case chomp of
+        Strip => pack $ reverse $ dropWhile (== '\n') $ reverse $ unpack withNl
+        Clip  => let trimmed = pack $ reverse $ dropWhile (== '\n') $ reverse $ unpack withNl
+                  in if trimmed == "" then "" else trimmed ++ "\n"
+        Keep  => withNl
+
+||| Check if a line has more indentation (for folded scalars)
+isMoreIndented : String -> Bool
+isMoreIndented s = case unpack s of
+  (' ' :: _) => True
+  _          => False
+
+||| Fold lines for folded block scalar
+foldLines : List String -> String
+foldLines [] = ""
+foldLines [x] = x ++ "\n"
+foldLines (x :: y :: rest) =
+  if x == ""
+    then x ++ "\n" ++ foldLines (y :: rest)
+    else if isMoreIndented x || isMoreIndented y
+      then x ++ "\n" ++ foldLines (y :: rest)
+      else if y == ""
+        then x ++ "\n" ++ foldLines (y :: rest)
+        else x ++ " " ++ foldLines (y :: rest)
+
+||| Apply folding and chomping
+applyFolded : Chomping -> SnocList String -> String
+applyFolded chomp lines =
+  let content = foldLines (lines <>> [])
+   in case chomp of
+        Strip => pack $ reverse $ dropWhile (== '\n') $ reverse $ unpack content
+        Clip  => let trimmed = pack $ reverse $ dropWhile (== '\n') $ reverse $ unpack content
+                  in if trimmed == "" then "" else trimmed ++ "\n"
+        Keep  => content
+
+mutual
+  ||| Block scalar content collection - structural recursion on input list
+  ||| State: folded?, chomping, content indent, current line spaces, current line content, completed lines
+  blockContent :
+       (folded : Bool)
+    -> Chomping
+    -> (contentIndent : Nat)
+    -> (lineSpaces : Nat)
+    -> (currentLine : SnocList Char)
+    -> (lines : SnocList String)
+    -> AutoTok e String
+  -- End of input
+  blockContent folded chomp ci ls cl lines [] =
+    -- Only add current line if there's content, or we have valid indentation with content
+    let finalLines = if cl /= [<]
+                       then lines :< (replicate (minus ls ci) ' ' ++ cast cl)
+                       else lines
+        result = if folded then applyFolded chomp finalLines else applyChomping chomp finalLines
+     in Succ result []
+  -- Counting leading spaces at start of line
+  blockContent folded chomp ci ls [<] lines (' ' :: xs) =
+    blockContent folded chomp ci (S ls) [<] lines xs
+  -- Newline while counting spaces (blank line)
+  blockContent folded chomp ci ls [<] lines ('\n' :: xs) =
+    blockContent folded chomp ci 0 [<] (lines :< "") xs
+  blockContent folded chomp ci ls [<] lines ('\r' :: '\n' :: xs) =
+    blockContent folded chomp ci 0 [<] (lines :< "") xs
+  -- First non-space char - check indentation (sufficient)
+  blockContent folded chomp ci ls [<] lines (c :: xs) =
+    if ls >= ci
+      then blockContent folded chomp ci ls [< c] lines xs  -- Continue reading line
+      else -- Dedent: end of block scalar, return with char unconsumed
+        let result = if folded then applyFolded chomp lines else applyChomping chomp lines
+         in Succ result (c :: xs)
+  -- Reading line content - newline ends the line
+  blockContent folded chomp ci ls cl lines ('\n' :: xs) =
+    blockContent folded chomp ci 0 [<] (lines :< (replicate (minus ls ci) ' ' ++ cast cl)) xs
+  blockContent folded chomp ci ls cl lines ('\r' :: '\n' :: xs) =
+    blockContent folded chomp ci 0 [<] (lines :< (replicate (minus ls ci) ' ' ++ cast cl)) xs
+  -- Regular character in line content
+  blockContent folded chomp ci ls cl lines (c :: xs) =
+    blockContent folded chomp ci ls (cl :< c) lines xs
+
+  ||| Auto-detect content indentation from first non-empty line
+  blockDetectIndent : (folded : Bool) -> Chomping -> (spaces : Nat) -> AutoTok e String
+  blockDetectIndent folded chomp n (' ' :: xs) = blockDetectIndent folded chomp (S n) xs
+  blockDetectIndent folded chomp n ('\n' :: xs) = blockDetectIndent folded chomp 0 xs
+  blockDetectIndent folded chomp n ('\r' :: '\n' :: xs) = blockDetectIndent folded chomp 0 xs
+  blockDetectIndent folded chomp n [] = Succ "" []  -- Empty block scalar
+  blockDetectIndent folded chomp n (c :: xs) =
+    -- n is the content indent, start reading content
+    blockContent folded chomp n n [< c] [<] xs
+
+  ||| Skip rest of header line (after indicators)
+  skipHeader : (folded : Bool) -> Chomping -> (explicitIndent : Maybe Nat) -> AutoTok e String
+  -- Newline - start content with auto-detect or explicit indent
+  skipHeader folded chomp (Just ci) ('\n' :: xs) =
+    blockContent folded chomp ci 0 [<] [<] xs
+  skipHeader folded chomp Nothing ('\n' :: xs) =
+    blockDetectIndent folded chomp 0 xs
+  skipHeader folded chomp mi ('\r' :: '\n' :: xs) =
+    skipHeader folded chomp mi ('\n' :: xs)
+  -- Skip spaces and comments until newline
+  skipHeader folded chomp mi (' ' :: xs) = skipHeader folded chomp mi xs
+  skipHeader folded chomp mi ('\t' :: xs) = skipHeader folded chomp mi xs
+  skipHeader folded chomp mi ('#' :: xs) = skipHeaderComment folded chomp mi xs
+  skipHeader folded chomp mi (_ :: xs) = skipHeader folded chomp mi xs
+  skipHeader folded chomp _ [] =
+    let result = if folded then applyFolded chomp [<] else applyChomping chomp [<]
+     in Succ result []
+
+  ||| Skip comment in header line
+  skipHeaderComment : (folded : Bool) -> Chomping -> Maybe Nat -> AutoTok e String
+  skipHeaderComment folded chomp mi ('\n' :: xs) = skipHeader folded chomp mi ('\n' :: xs)
+  skipHeaderComment folded chomp mi ('\r' :: '\n' :: xs) = skipHeader folded chomp mi ('\r' :: '\n' :: xs)
+  skipHeaderComment folded chomp mi (_ :: xs) = skipHeaderComment folded chomp mi xs
+  skipHeaderComment folded chomp _ [] =
+    let result = if folded then applyFolded chomp [<] else applyChomping chomp [<]
+     in Succ result []
+
+  ||| Continue after optional indentation indicator
+  blockScalarWithChompIndent : (folded : Bool) -> Chomping -> Maybe Nat -> AutoTok e String
+  blockScalarWithChompIndent folded Clip mi ('-' :: xs) = skipHeader folded Strip mi xs
+  blockScalarWithChompIndent folded Clip mi ('+' :: xs) = skipHeader folded Keep mi xs
+  blockScalarWithChompIndent folded chomp mi xs = skipHeader folded chomp mi xs
+
+  ||| Continue parsing after chomping indicator
+  blockScalarWithChomp : (folded : Bool) -> Chomping -> AutoTok e String
+  blockScalarWithChomp folded chomp (c :: xs) =
+    if c >= '1' && c <= '9'
+      then let indent = cast {to=Nat} (ord c - ord '0')
+            in blockScalarWithChompIndent folded chomp (Just indent) xs
+      else blockScalarWithChompIndent folded chomp Nothing (c :: xs)
+  blockScalarWithChomp folded chomp [] =
+    blockScalarWithChompIndent folded chomp Nothing []
+
+  ||| Parse block scalar header and start content collection
+  ||| folded: True for '>', False for '|'
+  blockScalar : (folded : Bool) -> AutoTok e String
+  blockScalar folded ('-' :: xs) = blockScalarWithChomp folded Strip xs
+  blockScalar folded ('+' :: xs) = blockScalarWithChomp folded Keep xs
+  blockScalar folded xs = blockScalarWithChomp folded Clip xs
+
+--------------------------------------------------------------------------------
 --          Scalar Value Interpretation
 --------------------------------------------------------------------------------
 
@@ -208,6 +361,8 @@ blockTok (':' :: '\r' :: xs)      = Succ TColon ('\r' :: xs)
 blockTok (':' :: '\t' :: xs)      = Succ TColon ('\t' :: xs)
 blockTok ('[' :: xs)              = Succ TLBracket xs
 blockTok ('{' :: xs)              = Succ TLBrace xs
+blockTok ('|' :: xs)              = TScalar . YStr <$> blockScalar False xs
+blockTok ('>' :: xs)              = TScalar . YStr <$> blockScalar True xs
 blockTok ('"' :: xs)              = TScalar . YStr <$> dqString [<] xs
 blockTok ('\'' :: xs)             = TScalar . YStr <$> sqString [<] xs
 blockTok ('\n' :: xs)             = Succ TNewline xs
