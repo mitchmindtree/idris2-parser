@@ -55,14 +55,56 @@ mutual
     Succ0 (YMap $ sv <>> [(k, v)]) ys
   blockMapAfterNested k sv (Fail0 err) _ = Fail0 err
 
+  -- Handle result after parsing nested value in block sequence
+  blockSeqAfterNested :
+       SnocList YAMLValue
+    -> Res True YAMLToken xs YAMLParseError YAMLValue
+    -> (0 acc : SuffixAcc xs)
+    -> Res True YAMLToken xs YAMLParseError YAMLValue
+  blockSeqAfterNested sv (Succ0 v (B TNewline _ :: B TDedent _ :: B TDash _ :: ys)) (SA r) =
+    -- After nested block, more items at parent level
+    succT $ blockSeqItems (sv :< v) ys r
+  blockSeqAfterNested sv (Succ0 v rest@(B TNewline _ :: B TDedent _ :: ys)) _ =
+    -- End of this sequence level
+    Succ0 (YSeq $ sv <>> [v]) rest
+  blockSeqAfterNested sv (Succ0 v rest@(B TDedent _ :: ys)) _ =
+    -- End without preceding newline
+    Succ0 (YSeq $ sv <>> [v]) rest
+  blockSeqAfterNested sv (Succ0 v ys) _ =
+    -- End of document
+    Succ0 (YSeq $ sv <>> [v]) ys
+  blockSeqAfterNested sv (Fail0 err) _ = Fail0 err
 
   -- Parse remaining items in a block sequence (after the first dash was consumed)
   blockSeqItems : SnocList YAMLValue -> Rule True YAMLValue
+  -- Content on next line after dash (handles: -\n  content)
+  blockSeqItems sv (B TNewline _ :: xs@(B TIndent _ :: _)) (SA r) =
+    succT $ blockSeqAfterNested sv (blockNestedValue xs r) r
+  -- Parse value on same line
   blockSeqItems sv xs acc@(SA r) = case value xs acc of
-    Succ0 v (B TNewline _ :: B TDash _ :: ys) => succT $ blockSeqItems (sv :< v) ys r
-    Succ0 v (B TDash _ :: ys)                 => succT $ blockSeqItems (sv :< v) ys r
-    Succ0 v ys                                => Succ0 (YSeq $ sv <>> [v]) ys
-    Fail0 err                                 => Fail0 err
+    -- Continue at same level
+    Succ0 v (B TNewline _ :: B TDash _ :: ys) =>
+      succT $ blockSeqItems (sv :< v) ys r
+    Succ0 v (B TDash _ :: ys) =>
+      succT $ blockSeqItems (sv :< v) ys r
+    -- Continue at nested level (handles: - - a\n  - b)
+    Succ0 v (B TNewline _ :: B TIndent _ :: B TDash _ :: ys) =>
+      succT $ blockSeqItems (sv :< v) ys r
+    -- Continue after nested structure exits (handles: - - a\n  - b\n- c)
+    -- Only applies when v is a nested seq/map, not a scalar
+    Succ0 v@(YSeq _) (B TNewline _ :: B TDedent _ :: B TDash _ :: ys) =>
+      succT $ blockSeqItems (sv :< v) ys r
+    Succ0 v@(YMap _) (B TNewline _ :: B TDedent _ :: B TDash _ :: ys) =>
+      succT $ blockSeqItems (sv :< v) ys r
+    -- End at dedent - leave TDedent for outer parser to handle continuation
+    Succ0 v rest@(B TNewline _ :: B TDedent _ :: ys) =>
+      Succ0 (YSeq $ sv <>> [v]) rest
+    Succ0 v rest@(B TDedent _ :: ys) =>
+      Succ0 (YSeq $ sv <>> [v]) rest
+    -- End of sequence
+    Succ0 v ys =>
+      Succ0 (YSeq $ sv <>> [v]) ys
+    Fail0 err => Fail0 err
 
   -- Parse value after colon in block mapping, then check for more pairs
   -- k: the key we're parsing the value for
@@ -86,7 +128,10 @@ mutual
   blockMapAfterColon k sv xs acc@(SA r) =
     case value xs acc of
       Succ0 v (B TNewline _ :: B (TScalar k2) _ :: B TColon _ :: ys) =>
-        -- Another key-value pair follows
+        -- Another key-value pair follows at same level
+        succT $ blockMapAfterColon k2 (sv :< (k, v)) ys r
+      Succ0 v (B TNewline _ :: B TIndent _ :: B (TScalar k2) _ :: B TColon _ :: ys) =>
+        -- Another key-value pair at nested level (compact notation: - key: val\n  key2: val2)
         succT $ blockMapAfterColon k2 (sv :< (k, v)) ys r
       Succ0 v rest@(B TNewline _ :: B TDedent _ :: ys) =>
         -- End of this mapping level - leave TDedent for outer parser

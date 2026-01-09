@@ -315,6 +315,111 @@ prop_comment_line = parseOk
   (YInt 42)
 
 --------------------------------------------------------------------------------
+--          Recursive Nesting Tests
+--------------------------------------------------------------------------------
+
+-- Inline nested sequences
+prop_nested_seq_inline : Property
+prop_nested_seq_inline = parseOk "- - a" (YSeq [YSeq [YStr "a"]])
+
+prop_nested_seq_triple : Property
+prop_nested_seq_triple = parseOk "- - - a" (YSeq [YSeq [YSeq [YStr "a"]]])
+
+-- Nested sequence with continuation
+prop_nested_seq_multi : Property
+prop_nested_seq_multi = parseOk
+  """
+  - - a
+    - b
+  """
+  (YSeq [YSeq [YStr "a", YStr "b"]])
+
+prop_nested_seq_with_outer : Property
+prop_nested_seq_with_outer = parseOk
+  """
+  - - a
+    - b
+  - c
+  """
+  (YSeq [YSeq [YStr "a", YStr "b"], YStr "c"])
+
+-- Compact notation (sequence item is a multi-key mapping)
+prop_compact_single : Property
+prop_compact_single = parseOk
+  """
+  - name: foo
+    value: 1
+  """
+  (YSeq [YMap [(YStr "name", YStr "foo"), (YStr "value", YInt 1)]])
+
+prop_compact_multi : Property
+prop_compact_multi = parseOk
+  """
+  - a: 1
+    b: 2
+  - c: 3
+  """
+  (YSeq [YMap [(YStr "a", YInt 1), (YStr "b", YInt 2)],
+         YMap [(YStr "c", YInt 3)]])
+
+-- Dash-newline-indent patterns
+prop_dash_newline_seq : Property
+prop_dash_newline_seq = parseOk
+  """
+  -
+    - a
+  """
+  (YSeq [YSeq [YStr "a"]])
+
+prop_dash_newline_map : Property
+prop_dash_newline_map = parseOk
+  """
+  -
+    name: foo
+  """
+  (YSeq [YMap [(YStr "name", YStr "foo")]])
+
+-- Real-world pattern: list of objects
+prop_list_of_objects : Property
+prop_list_of_objects = parseOk
+  """
+  - name: alice
+    age: 30
+  - name: bob
+    age: 25
+  """
+  (YSeq [YMap [(YStr "name", YStr "alice"), (YStr "age", YInt 30)],
+         YMap [(YStr "name", YStr "bob"), (YStr "age", YInt 25)]])
+
+-- Deep mixed nesting
+prop_deep_mixed_nesting : Property
+prop_deep_mixed_nesting = parseOk
+  """
+  - config:
+      items:
+        - a
+        - b
+      name: test
+  """
+  (YSeq [YMap [(YStr "config", YMap [
+    (YStr "items", YSeq [YStr "a", YStr "b"]),
+    (YStr "name", YStr "test")])]])
+
+-- Map containing sequence of compact maps
+prop_map_with_seq_of_maps : Property
+prop_map_with_seq_of_maps = parseOk
+  """
+  users:
+    - name: alice
+      role: admin
+    - name: bob
+      role: user
+  """
+  (YMap [(YStr "users", YSeq [
+    YMap [(YStr "name", YStr "alice"), (YStr "role", YStr "admin")],
+    YMap [(YStr "name", YStr "bob"), (YStr "role", YStr "user")]])])
+
+--------------------------------------------------------------------------------
 --          Main Function
 --------------------------------------------------------------------------------
 
@@ -375,6 +480,17 @@ properties =
     , ("prop_leading_whitespace", prop_leading_whitespace)
     , ("prop_comment_inline", prop_comment_inline)
     , ("prop_comment_line", prop_comment_line)
+    , ("prop_nested_seq_inline", prop_nested_seq_inline)
+    , ("prop_nested_seq_triple", prop_nested_seq_triple)
+    , ("prop_nested_seq_multi", prop_nested_seq_multi)
+    , ("prop_nested_seq_with_outer", prop_nested_seq_with_outer)
+    , ("prop_compact_single", prop_compact_single)
+    , ("prop_compact_multi", prop_compact_multi)
+    , ("prop_dash_newline_seq", prop_dash_newline_seq)
+    , ("prop_dash_newline_map", prop_dash_newline_map)
+    , ("prop_list_of_objects", prop_list_of_objects)
+    , ("prop_deep_mixed_nesting", prop_deep_mixed_nesting)
+    , ("prop_map_with_seq_of_maps", prop_map_with_seq_of_maps)
     ]
 
 main : IO ()
