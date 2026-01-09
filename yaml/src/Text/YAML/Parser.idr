@@ -136,6 +136,10 @@ mutual
       Succ0 v rest@(B TNewline _ :: B TDedent _ :: ys) =>
         -- End of this mapping level - leave TDedent for outer parser
         Succ0 (YMap $ sv <>> [(k, v)]) rest
+      Succ0 v (B (TScalar k2) _ :: B TColon _ :: ys) =>
+        -- After block scalar: key follows directly without TNewline
+        -- (block scalar consumed the newline internally)
+        succT $ blockMapAfterColon k2 (sv :< (k, v)) ys r
       Succ0 v ys =>
         -- No more key-value pairs
         Succ0 (YMap $ sv <>> [(k, v)]) ys
@@ -183,6 +187,13 @@ skipLeadingWs (B TIndent _ :: xs) = skipLeadingWs xs
 skipLeadingWs (B TDedent _ :: xs) = skipLeadingWs xs
 skipLeadingWs xs = xs
 
+||| Skip trailing whitespace tokens before EOI
+skipTrailingWs : List (Bounded YAMLToken) -> List (Bounded YAMLToken)
+skipTrailingWs [B TNewline _, B TEOI b] = [B TEOI b]
+skipTrailingWs [B TDedent _, B TEOI b] = [B TEOI b]
+skipTrailingWs [B TNewline _, B TDedent _, B TEOI b] = [B TEOI b]
+skipTrailingWs xs = xs
+
 export
 parseYAML : Origin -> String -> Either (ParseError YAMLParseError) YAMLValue
 parseYAML o str = case lexYAML str of
@@ -190,5 +201,8 @@ parseYAML o str = case lexYAML str of
     Fail0 x           => Left (toParseError o str x)
     Succ0 v []        => Right v
     Succ0 v [B TEOI _] => Right v
-    Succ0 v (x :: xs) => leftErr o str $ unexpected x
+    Succ0 v remaining => case skipTrailingWs remaining of
+      [B TEOI _] => Right v
+      (x :: xs)  => leftErr o str $ unexpected x
+      []         => Right v
   Left err => Left (toParseError o str err)

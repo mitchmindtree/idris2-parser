@@ -213,13 +213,18 @@ mutual
     blockContent folded chomp ci ls (cl :< c) lines xs
 
   ||| Auto-detect content indentation from first non-empty line
+  ||| Block scalar content must have at least 1 space of indentation
   blockDetectIndent : (folded : Bool) -> Chomping -> (spaces : Nat) -> AutoTok e String
   blockDetectIndent folded chomp n (' ' :: xs) = blockDetectIndent folded chomp (S n) xs
   blockDetectIndent folded chomp n ('\n' :: xs) = blockDetectIndent folded chomp 0 xs
   blockDetectIndent folded chomp n ('\r' :: '\n' :: xs) = blockDetectIndent folded chomp 0 xs
   blockDetectIndent folded chomp n [] = Succ "" []  -- Empty block scalar
-  blockDetectIndent folded chomp n (c :: xs) =
-    -- n is the content indent, start reading content
+  blockDetectIndent folded chomp Z (c :: xs) =
+    -- Zero indentation means end of block scalar (content must be indented)
+    let result = if folded then applyFolded chomp [<] else applyChomping chomp [<]
+     in Succ result (c :: xs)
+  blockDetectIndent folded chomp n@(S _) (c :: xs) =
+    -- n > 0, this is the content indent, start reading content
     blockContent folded chomp n n [< c] [<] xs
 
   ||| Skip rest of header line (after indicators)
@@ -511,7 +516,8 @@ mutual
           Succ val ys @{p'} =>
             let pos2 = endPos pos p'
                 ctx2 = adjFlow ctx val
-             in lex ctx2 stack pos2 (sx :< bounded val pos pos2) ys r
+                sx2 = sx :< bounded val pos pos2
+             in lex ctx2 stack pos2 sx2 ys r
           Fail start errEnd e => Left $ boundedErr pos start errEnd e
 
 ||| Lex a YAML string into a list of tokens
