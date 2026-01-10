@@ -122,7 +122,7 @@ data Offset : Type where
   Z : Offset
   O : (sign : Sign) -> (h : Hour) -> (m : Minute) -> Offset
 
-%runElab derive "Offset" [Show, Eq]
+%runElab derive "Offset" [Show, Eq, Ord]
 
 export
 Interpolation Offset where
@@ -139,7 +139,7 @@ record OffsetTime where
   time   : LocalTime
   offset : Offset
 
-%runElab derive "OffsetTime" [Show, Eq]
+%runElab derive "OffsetTime" [Show, Eq, Ord]
 
 export
 Interpolation OffsetTime where
@@ -155,7 +155,7 @@ record LocalDateTime where
   date : Date
   time : LocalTime
 
-%runElab derive "LocalDateTime" [Show, Eq]
+%runElab derive "LocalDateTime" [Show, Eq, Ord]
 
 export
 Interpolation LocalDateTime where
@@ -167,7 +167,7 @@ record OffsetDateTime where
   date : Date
   time : OffsetTime
 
-%runElab derive "OffsetDateTime" [Show, Eq]
+%runElab derive "OffsetDateTime" [Show, Eq, Ord]
 
 export
 Interpolation OffsetDateTime where
@@ -184,7 +184,7 @@ data AnyTime : Type where
   ATLocalDateTime  : LocalDateTime -> AnyTime
   ATOffsetDateTime : OffsetDateTime -> AnyTime
 
-%runElab derive "AnyTime" [Show, Eq]
+%runElab derive "AnyTime" [Show, Eq, Ord]
 
 export
 Interpolation AnyTime where
