@@ -229,14 +229,13 @@ mutual
   ||| Read a plain (unquoted) scalar in block context (multi-line aware)
   ||| baseIndent is the column where the scalar started
   plainScalarBlockMulti : (baseIndent : Nat) -> SnocList Char -> AutoTok e String
-  -- Colon followed by whitespace/EOF = mapping indicator, end scalar
-  plainScalarBlockMulti bi sc (':' :: ' ' :: xs)  = finishScalar sc (':' :: ' ' :: xs)
-  plainScalarBlockMulti bi sc (':' :: '\t' :: xs) = finishScalar sc (':' :: '\t' :: xs)
-  plainScalarBlockMulti bi sc (':' :: '\n' :: xs) = finishScalar sc (':' :: '\n' :: xs)
-  plainScalarBlockMulti bi sc (':' :: '\r' :: xs) = finishScalar sc (':' :: '\r' :: xs)
-  plainScalarBlockMulti bi sc [':']               = finishScalar sc [':']
-  -- Colon followed by other char = part of the scalar
-  plainScalarBlockMulti bi sc (':' :: xs)         = plainScalarBlockMulti bi (sc :< ':') xs
+  -- Colon: if followed by whitespace/EOF it's a mapping indicator (end scalar),
+  -- otherwise it's part of the scalar content
+  plainScalarBlockMulti bi sc (':' :: x :: xs) =
+    if isSpace x
+      then finishScalar sc (':' :: x :: xs)
+      else plainScalarBlockMulti bi (sc :< ':') (x :: xs)
+  plainScalarBlockMulti bi sc [':'] = finishScalar sc [':']
   -- Newline: check for continuation using non-consuming lookahead
   plainScalarBlockMulti bi sc ('\n' :: xs) =
     if isBlankLine xs
