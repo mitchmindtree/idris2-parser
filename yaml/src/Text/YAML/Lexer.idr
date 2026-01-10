@@ -767,13 +767,27 @@ mutual
     lexAfterNewline ctx stack (incCol pos) sx (S spaces) xs r
   lexAfterNewline ctx stack pos sx spaces ('\t' :: xs) _ =
     Left $ bounded (Custom TabIndent) pos (incCol pos)
-  -- Blank line or comment-only line: skip without changing indent state
+  -- Blank line: skip without changing indent state
   lexAfterNewline ctx stack pos sx spaces ('\n' :: xs) (SA r) =
     let pos2 = incLine pos
      in lexAfterNewline ctx stack pos2 (sx :< bounded TNewline pos pos2) 0 xs r
   lexAfterNewline ctx stack pos sx spaces ('\r' :: '\n' :: xs) (SA r) =
     let pos2 = incLine pos
      in lexAfterNewline ctx stack pos2 (sx :< bounded TNewline pos pos2) 0 xs r
+  -- Comment-only line: skip comment without changing indent state or emitting tokens
+  lexAfterNewline ctx stack pos sx spaces ('#' :: xs) (SA r) =
+    skipToNewline xs r
+    where
+      skipToNewline : (cs : List Char) -> (0 acc : SuffixAcc cs)
+                   -> Either (Bounded YAMLErr) (List $ Bounded YAMLToken)
+      skipToNewline ('\n' :: ys) (SA r') =
+        let pos2 = incLine pos
+         in lexAfterNewline ctx stack pos2 sx 0 ys r'  -- Don't emit TNewline
+      skipToNewline ('\r' :: '\n' :: ys) (SA r') =
+        let pos2 = incLine pos
+         in lexAfterNewline ctx stack pos2 sx 0 ys r'  -- Don't emit TNewline
+      skipToNewline (_ :: ys) (SA r') = skipToNewline ys r'
+      skipToNewline [] _ = Right $ sx <>> [bounded TEOI pos pos]
   lexAfterNewline ctx stack pos sx spaces xs acc =
     let curIndent = currentIndent stack
      in if spaces > curIndent

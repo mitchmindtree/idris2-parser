@@ -340,6 +340,16 @@ prop_block_map_empty_value_end : Property
 prop_block_map_empty_value_end = parseOk "key:\n"
   (YMap [(YStr "key", YNull)])
 
+-- Comment-only lines between key and value
+prop_block_map_comment_lines : Property
+prop_block_map_comment_lines = parseOk
+  """
+  key: # comment
+    # another comment
+    value
+  """
+  (YMap [(YStr "key", YStr "value")])
+
 --------------------------------------------------------------------------------
 --          Nested Block Structure Tests
 --------------------------------------------------------------------------------
@@ -1433,6 +1443,7 @@ properties =
     , ("prop_block_map_flow_value", prop_block_map_flow_value)
     , ("prop_block_map_empty_value", prop_block_map_empty_value)
     , ("prop_block_map_empty_value_end", prop_block_map_empty_value_end)
+    , ("prop_block_map_comment_lines", prop_block_map_comment_lines)
     , ("prop_nested_map_simple", prop_nested_map_simple)
     , ("prop_nested_map_with_sibling", prop_nested_map_with_sibling)
     , ("prop_nested_map_children_then_sibling", prop_nested_map_children_then_sibling)
