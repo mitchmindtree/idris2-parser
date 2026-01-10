@@ -977,6 +977,32 @@ prop_complex_key_mixed = parseOk
   (YMap [(YStr "simple", YStr "value"), (YSeq [YStr "complex"], YStr "other")])
 
 --------------------------------------------------------------------------------
+--          Null Key Tests (empty/implicit key)
+--------------------------------------------------------------------------------
+
+-- Null key in block mapping: colon without preceding key
+prop_null_key_block : Property
+prop_null_key_block = parseOk
+  ": value"
+  (YMap [(YNull, YStr "value")])
+
+-- Null key with null value (colon must have trailing whitespace)
+prop_null_key_null_value : Property
+prop_null_key_null_value = parseOk
+  ":\n"
+  (YMap [(YNull, YNull)])
+
+-- Null key mixed with regular keys (SortedMap orders YNull before YStr)
+prop_null_key_mixed : Property
+prop_null_key_mixed = parseOk
+  """
+  a: 1
+  : null_key_val
+  b: 2
+  """
+  (YMap [(YNull, YStr "null_key_val"), (YStr "a", YInt 1), (YStr "b", YInt 2)])
+
+--------------------------------------------------------------------------------
 --          Anchor and Alias Tests
 --------------------------------------------------------------------------------
 
@@ -1523,6 +1549,9 @@ properties =
     , ("prop_complex_key_in_flow", prop_complex_key_in_flow)
     , ("prop_complex_key_nested_map", prop_complex_key_nested_map)
     , ("prop_complex_key_mixed", prop_complex_key_mixed)
+    , ("prop_null_key_block", prop_null_key_block)
+    , ("prop_null_key_null_value", prop_null_key_null_value)
+    , ("prop_null_key_mixed", prop_null_key_mixed)
     , ("prop_anchor_simple", prop_anchor_simple)
     , ("prop_anchor_seq", prop_anchor_seq)
     , ("prop_anchor_map", prop_anchor_map)

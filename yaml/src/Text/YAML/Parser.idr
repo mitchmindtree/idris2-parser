@@ -264,6 +264,9 @@ mutual
   -- Same level: next key-value pair (value is null)
   blockMapAfterColon k sv m (B TNewline _ :: B (TScalar k2) _ :: B TColon _ :: xs) (SA r) =
     succT $ blockMapAfterColon k2 (addOrMerge k YNull sv) m xs r
+  -- Null key follows at same level (value is null for current key)
+  blockMapAfterColon k sv m (B TNewline _ :: B TColon _ :: xs) (SA r) =
+    succT $ blockMapAfterColon YNull (addOrMerge k YNull sv) m xs r
   -- Complex key follows (value is null for current key)
   blockMapAfterColon k sv m (B TNewline _ :: B TQuestion _ :: xs) (SA r) =
     case succT $ value m xs r of
@@ -295,6 +298,9 @@ mutual
             succT $ blockMapAfterColon k2 (addOrMerge k v sv) m'' rest r
           Succ0 _ zs => fail zs
           Fail0 err => Fail0 err
+      Succ0 (m', v) (B TNewline _ :: B TColon _ :: ys) =>
+        -- Null key follows at same level
+        succT $ blockMapAfterColon YNull (addOrMerge k v sv) m' ys r
       Succ0 (m', v) (B TNewline _ :: B TIndent _ :: B (TScalar k2) _ :: B TColon _ :: ys) =>
         -- Another key-value pair at nested level (compact notation: - key: val\n  key2: val2)
         succT $ blockMapAfterColon k2 (addOrMerge k v sv) m' ys r
@@ -314,6 +320,11 @@ mutual
         succT $ blockMapAfterColon k2 (addOrMerge k v sv) m' ys r
       Succ0 (m', v@(YSeq _)) (B TNewline _ :: B TDedent _ :: B (TScalar k2) _ :: B TColon _ :: ys) =>
         succT $ blockMapAfterColon k2 (addOrMerge k v sv) m' ys r
+      -- Null key after dedent from compound value
+      Succ0 (m', v@(YMap _)) (B TNewline _ :: B TDedent _ :: B TColon _ :: ys) =>
+        succT $ blockMapAfterColon YNull (addOrMerge k v sv) m' ys r
+      Succ0 (m', v@(YSeq _)) (B TNewline _ :: B TDedent _ :: B TColon _ :: ys) =>
+        succT $ blockMapAfterColon YNull (addOrMerge k v sv) m' ys r
       Succ0 (m', v) rest@(B TNewline _ :: B TDedent _ :: ys) =>
         -- End of this mapping level - leave TDedent for outer parser
         Succ0 (m', YMap $ toList (addOrMerge k v sv)) rest
@@ -359,6 +370,8 @@ mutual
       -- Missing colon after complex key
       Succ0 _ ys => fail ys
       Fail0 err => Fail0 err
+  -- Null key mapping: colon without preceding key (implicit null key)
+  value m (B TColon _ :: xs) (SA r) = succT $ blockMapAfterColon YNull empty m xs r
   -- Block mapping: scalar followed by colon, delegate to blockMapAfterColon
   value m (B (TScalar k) _ :: B TColon _ :: xs) (SA r) = succT $ blockMapAfterColon k empty m xs r
   -- Plain scalar value
