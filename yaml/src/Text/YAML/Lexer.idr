@@ -152,23 +152,16 @@ isPlainEndFlow '{'  = True
 isPlainEndFlow '}'  = True
 isPlainEndFlow c    = isPlainEndBlock c
 
-||| Count leading spaces in a list (non-consuming helper for lookahead)
-countSpacesLookahead : Nat -> List Char -> Nat
-countSpacesLookahead n (' ' :: xs) = countSpacesLookahead (S n) xs
-countSpacesLookahead n _ = n
-
-||| Get rest of list after n spaces (non-consuming helper)
-dropSpaces : Nat -> List Char -> List Char
-dropSpaces Z xs = xs
-dropSpaces (S n) (' ' :: xs) = dropSpaces n xs
-dropSpaces _ xs = xs
+||| Count leading spaces and return count with remaining chars (single pass)
+countAndSkipSpaces : Nat -> List Char -> (Nat, List Char)
+countAndSkipSpaces n (' ' :: xs) = countAndSkipSpaces (S n) xs
+countAndSkipSpaces n xs = (n, xs)
 
 ||| Check if we should continue plain scalar on next line
 ||| Returns True if: more indented AND no block indicator at start AND no mapping indicator on line
 shouldContinuePlain : (baseIndent : Nat) -> List Char -> Bool
 shouldContinuePlain bi xs =
-  let spaces = countSpacesLookahead 0 xs
-      rest = dropSpaces spaces xs
+  let (spaces, rest) = countAndSkipSpaces 0 xs
    in spaces > bi
       && not (lineStartsWithBlockIndicator rest)
       && not (lineHasMappingIndicator rest)
@@ -245,11 +238,6 @@ mutual
       then Succ (cast $ rtrimLine sc) (c :: xs)
       else plainScalarBlockMulti bi (sc :< c) xs
   plainScalarBlockMulti bi sc [] = Succ (cast $ rtrimLine sc) []
-
-||| Read a plain (unquoted) scalar in block context
-||| Uses single-line version for simplicity when indent is 0
-plainScalarBlock : (baseIndent : Nat) -> SnocList Char -> AutoTok e String
-plainScalarBlock bi = plainScalarBlockMulti bi
 
 ||| Read a plain (unquoted) scalar in flow context
 ||| In flow context, : always ends the scalar (mapping indicator)
@@ -507,33 +495,33 @@ interpretScalar s = case tryYamlInteger s of
 ||| Takes the current block indentation level for multi-line plain scalar handling
 blockTok : (blockIndent : Nat) -> Tok True e YAMLToken
 -- Document markers (must come before dash handling)
-blockTok col ('-' :: '-' :: '-' :: ' ' :: xs)  = Succ TDocStart (' ' :: xs)
-blockTok col ('-' :: '-' :: '-' :: '\n' :: xs) = Succ TDocStart ('\n' :: xs)
-blockTok col ('-' :: '-' :: '-' :: '\r' :: xs) = Succ TDocStart ('\r' :: xs)
-blockTok col ('-' :: '-' :: '-' :: [])         = Succ TDocStart []
-blockTok col ('.' :: '.' :: '.' :: ' ' :: xs)  = Succ TDocEnd (' ' :: xs)
-blockTok col ('.' :: '.' :: '.' :: '\n' :: xs) = Succ TDocEnd ('\n' :: xs)
-blockTok col ('.' :: '.' :: '.' :: '\r' :: xs) = Succ TDocEnd ('\r' :: xs)
-blockTok col ('.' :: '.' :: '.' :: [])         = Succ TDocEnd []
+blockTok bi ('-' :: '-' :: '-' :: ' ' :: xs)  = Succ TDocStart (' ' :: xs)
+blockTok bi ('-' :: '-' :: '-' :: '\n' :: xs) = Succ TDocStart ('\n' :: xs)
+blockTok bi ('-' :: '-' :: '-' :: '\r' :: xs) = Succ TDocStart ('\r' :: xs)
+blockTok bi ('-' :: '-' :: '-' :: [])         = Succ TDocStart []
+blockTok bi ('.' :: '.' :: '.' :: ' ' :: xs)  = Succ TDocEnd (' ' :: xs)
+blockTok bi ('.' :: '.' :: '.' :: '\n' :: xs) = Succ TDocEnd ('\n' :: xs)
+blockTok bi ('.' :: '.' :: '.' :: '\r' :: xs) = Succ TDocEnd ('\r' :: xs)
+blockTok bi ('.' :: '.' :: '.' :: [])         = Succ TDocEnd []
 -- Sequence item indicator
-blockTok col ('-' :: ' ' :: xs)       = Succ TDash (' ' :: xs)
-blockTok col ('-' :: '\n' :: xs)      = Succ TDash ('\n' :: xs)
-blockTok col ('-' :: '\r' :: xs)      = Succ TDash ('\r' :: xs)
-blockTok col ('-' :: '\t' :: xs)      = Succ TDash ('\t' :: xs)
-blockTok col (':' :: ' ' :: xs)       = Succ TColon (' ' :: xs)
-blockTok col (':' :: '\n' :: xs)      = Succ TColon ('\n' :: xs)
-blockTok col (':' :: '\r' :: xs)      = Succ TColon ('\r' :: xs)
-blockTok col (':' :: '\t' :: xs)      = Succ TColon ('\t' :: xs)
-blockTok col ('[' :: xs)              = Succ TLBracket xs
-blockTok col ('{' :: xs)              = Succ TLBrace xs
-blockTok col ('|' :: xs)              = TScalar . YStr <$> blockScalar False xs
-blockTok col ('>' :: xs)              = TScalar . YStr <$> blockScalar True xs
-blockTok col ('"' :: xs)              = TScalar . YStr <$> dqString [<] xs
-blockTok col ('\'' :: xs)             = TScalar . YStr <$> sqString [<] xs
-blockTok col ('\n' :: xs)             = Succ TNewline xs
-blockTok col ('\r' :: '\n' :: xs)     = Succ TNewline xs
-blockTok col (c :: xs)                = TScalar . interpretScalar <$> plainScalarBlock col [< c] xs
-blockTok col []                       = eoiAt Same
+blockTok bi ('-' :: ' ' :: xs)       = Succ TDash (' ' :: xs)
+blockTok bi ('-' :: '\n' :: xs)      = Succ TDash ('\n' :: xs)
+blockTok bi ('-' :: '\r' :: xs)      = Succ TDash ('\r' :: xs)
+blockTok bi ('-' :: '\t' :: xs)      = Succ TDash ('\t' :: xs)
+blockTok bi (':' :: ' ' :: xs)       = Succ TColon (' ' :: xs)
+blockTok bi (':' :: '\n' :: xs)      = Succ TColon ('\n' :: xs)
+blockTok bi (':' :: '\r' :: xs)      = Succ TColon ('\r' :: xs)
+blockTok bi (':' :: '\t' :: xs)      = Succ TColon ('\t' :: xs)
+blockTok bi ('[' :: xs)              = Succ TLBracket xs
+blockTok bi ('{' :: xs)              = Succ TLBrace xs
+blockTok bi ('|' :: xs)              = TScalar . YStr <$> blockScalar False xs
+blockTok bi ('>' :: xs)              = TScalar . YStr <$> blockScalar True xs
+blockTok bi ('"' :: xs)              = TScalar . YStr <$> dqString [<] xs
+blockTok bi ('\'' :: xs)             = TScalar . YStr <$> sqString [<] xs
+blockTok bi ('\n' :: xs)             = Succ TNewline xs
+blockTok bi ('\r' :: '\n' :: xs)     = Succ TNewline xs
+blockTok bi (c :: xs)                = TScalar . interpretScalar <$> plainScalarBlockMulti bi [< c] xs
+blockTok bi []                       = eoiAt Same
 
 ||| Lex a single token in flow context
 flowTok : Tok True e YAMLToken
