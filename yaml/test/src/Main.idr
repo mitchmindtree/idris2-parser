@@ -94,6 +94,38 @@ prop_float_exp : Property
 prop_float_exp = parseOk "1e10" (YFloat 1.0e10)
 
 --------------------------------------------------------------------------------
+--          Timestamp Tests
+--------------------------------------------------------------------------------
+
+prop_time_date : Property
+prop_time_date = parseOk "2024-01-15" (YTime $ ATDate $ MkDate 2024 JAN 15)
+
+prop_time_datetime : Property
+prop_time_datetime =
+  parseOk "2024-01-15T10:30:00"
+    (YTime $ ATLocalDateTime $ LDT (MkDate 2024 JAN 15) (LT 10 30 0 Nothing))
+
+prop_time_datetime_lower : Property
+prop_time_datetime_lower =
+  parseOk "2024-01-15t10:30:00"
+    (YTime $ ATLocalDateTime $ LDT (MkDate 2024 JAN 15) (LT 10 30 0 Nothing))
+
+prop_time_datetime_z : Property
+prop_time_datetime_z =
+  parseOk "2024-01-15T10:30:00Z"
+    (YTime $ ATOffsetDateTime $ ODT (MkDate 2024 JAN 15) (OT (LT 10 30 0 Nothing) Z))
+
+prop_time_datetime_offset : Property
+prop_time_datetime_offset =
+  parseOk "2024-01-15T10:30:00+05:30"
+    (YTime $ ATOffsetDateTime $ ODT (MkDate 2024 JAN 15) (OT (LT 10 30 0 Nothing) (O Plus 5 30)))
+
+prop_time_in_map : Property
+prop_time_in_map =
+  parseOk "date: 2024-01-15"
+    (YMap [(YStr "date", YTime $ ATDate $ MkDate 2024 JAN 15)])
+
+--------------------------------------------------------------------------------
 --          String Tests
 --------------------------------------------------------------------------------
 
@@ -662,6 +694,12 @@ properties =
     , ("prop_int_octal", prop_int_octal)
     , ("prop_float_simple", prop_float_simple)
     , ("prop_float_exp", prop_float_exp)
+    , ("prop_time_date", prop_time_date)
+    , ("prop_time_datetime", prop_time_datetime)
+    , ("prop_time_datetime_lower", prop_time_datetime_lower)
+    , ("prop_time_datetime_z", prop_time_datetime_z)
+    , ("prop_time_datetime_offset", prop_time_datetime_offset)
+    , ("prop_time_in_map", prop_time_in_map)
     , ("prop_string_plain", prop_string_plain)
     , ("prop_string_double_quoted", prop_string_double_quoted)
     , ("prop_string_single_quoted", prop_string_single_quoted)

@@ -3,6 +3,7 @@ version   = 0.1.0
 authors   = "mitchmindtree"
 sourcedir = "src"
 depends   = parser
+          , parser-datetime
 
 brief     = "Total and efficient parser and lexer for the YAML data format"
 

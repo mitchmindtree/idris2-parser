@@ -1,5 +1,6 @@
 module Text.YAML.Types
 
+import public Data.Time.Time
 import Derive.Prelude
 import Text.Bounds
 import Text.ParseError
@@ -34,6 +35,9 @@ data YAMLValue : Type where
 
   ||| Mapping (dictionary) of key-value pairs
   YMap    : List (YAMLValue, YAMLValue) -> YAMLValue
+
+  ||| Timestamp value (ISO 8601 date/time)
+  YTime   : AnyTime -> YAMLValue
 
 %runElab derive "YAMLValue" [Eq, Show]
 
@@ -105,6 +109,7 @@ Interpolation YAMLToken where
     YStr s    => show s
     YSeq _    => "sequence"
     YMap _    => "mapping"
+    YTime t   => interpolate t
   interpolate TNewline    = "<newline>"
   interpolate TIndent     = "<indent>"
   interpolate TDedent     = "<dedent>"

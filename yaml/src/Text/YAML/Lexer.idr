@@ -2,9 +2,11 @@ module Text.YAML.Lexer
 
 import Data.List
 import Data.List1
+import Data.List.Suffix
 import Data.SnocList
 import Data.String
 import Text.Parse.Manual
+import Text.Time.Lexer
 import Text.YAML.Types
 
 %default total
@@ -110,15 +112,14 @@ rtrimLine (sx :< ' ')  = rtrimLine sx
 rtrimLine (sx :< '\t') = rtrimLine sx
 rtrimLine sx           = sx
 
-||| Characters that terminate a plain scalar in block context
+||| Characters that always terminate a plain scalar in block context
 isPlainEndBlock : Char -> Bool
-isPlainEndBlock ':' = True
 isPlainEndBlock '#' = True
 isPlainEndBlock '\n' = True
 isPlainEndBlock '\r' = True
 isPlainEndBlock _   = False
 
-||| Characters that terminate a plain scalar in flow context
+||| Characters that always terminate a plain scalar in flow context
 isPlainEndFlow : Char -> Bool
 isPlainEndFlow ','  = True
 isPlainEndFlow '['  = True
@@ -128,7 +129,16 @@ isPlainEndFlow '}'  = True
 isPlainEndFlow c    = isPlainEndBlock c
 
 ||| Read a plain (unquoted) scalar in block context
+||| Colon only ends the scalar if followed by whitespace (mapping indicator)
 plainScalarBlock : SnocList Char -> AutoTok e String
+-- Colon followed by whitespace/EOF = mapping indicator, end scalar
+plainScalarBlock sc (':' :: ' ' :: xs)  = Succ (cast $ rtrimLine sc) (':' :: ' ' :: xs)
+plainScalarBlock sc (':' :: '\t' :: xs) = Succ (cast $ rtrimLine sc) (':' :: '\t' :: xs)
+plainScalarBlock sc (':' :: '\n' :: xs) = Succ (cast $ rtrimLine sc) (':' :: '\n' :: xs)
+plainScalarBlock sc (':' :: '\r' :: xs) = Succ (cast $ rtrimLine sc) (':' :: '\r' :: xs)
+plainScalarBlock sc [':']               = Succ (cast $ rtrimLine sc) [':']
+-- Colon followed by other char = part of the scalar
+plainScalarBlock sc (':' :: xs)         = plainScalarBlock (sc :< ':') xs
 plainScalarBlock sc (c :: xs) =
   if isPlainEndBlock c
     then Succ (cast $ rtrimLine sc) (c :: xs)
@@ -136,7 +146,9 @@ plainScalarBlock sc (c :: xs) =
 plainScalarBlock sc [] = Succ (cast $ rtrimLine sc) []
 
 ||| Read a plain (unquoted) scalar in flow context
+||| In flow context, : always ends the scalar (mapping indicator)
 plainScalarFlow : SnocList Char -> AutoTok e String
+plainScalarFlow sc (':' :: xs) = Succ (cast $ rtrimLine sc) (':' :: xs)
 plainScalarFlow sc (c :: xs) =
   if isPlainEndFlow c
     then Succ (cast $ rtrimLine sc) (c :: xs)
@@ -324,6 +336,14 @@ tryYamlInteger s = case unpack s of
     _         => Nothing
   _                  => Nothing
 
+||| Try to parse an ISO 8601 timestamp
+tryTimestamp : String -> Maybe AnyTime
+tryTimestamp s =
+  let cs : List Char = unpack s
+  in case anyTime {e=()} {orig=cs} cs @{Same} of
+    Succ v [] => Just v
+    _         => Nothing
+
 ||| Try to parse a standard numeric value using the `number` shifter.
 ||| Returns Just if the entire string is a valid number, Nothing otherwise.
 tryNumber : String -> Maybe YAMLValue
@@ -364,12 +384,14 @@ interpretScalar "+.INF" = YFloat (1.0 / 0.0)
 interpretScalar "-.inf" = YFloat (negate $ 1.0 / 0.0)
 interpretScalar "-.Inf" = YFloat (negate $ 1.0 / 0.0)
 interpretScalar "-.INF" = YFloat (negate $ 1.0 / 0.0)
--- Numeric values
+-- Numeric values and timestamps
 interpretScalar s = case tryYamlInteger s of
   Just i  => YInt i
   Nothing => case tryNumber s of
     Just v  => v
-    Nothing => YStr s
+    Nothing => case tryTimestamp s of
+      Just t  => YTime t
+      Nothing => YStr s
 
 --------------------------------------------------------------------------------
 --          Token Lexing
