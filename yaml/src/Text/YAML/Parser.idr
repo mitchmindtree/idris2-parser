@@ -132,30 +132,28 @@ isMergeKey : YAMLValue -> Bool
 isMergeKey (YStr "<<") = True
 isMergeKey _ = False
 
-||| Add a key-value pair, removing any existing pair with the same key (last wins)
-addPair : YAMLValue -> YAMLValue
-       -> SnocList (YAMLValue, YAMLValue)
-       -> SnocList (YAMLValue, YAMLValue)
-addPair k v acc =
-  let filtered = filter (\(ek, _) => ek /= k) (acc <>> [])
-  in (Lin <>< filtered) :< (k, v)
+||| Type alias for map accumulator during parsing
+0 MapAcc : Type
+MapAcc = SortedMap YAMLValue YAMLValue
 
-||| Merge pairs from a YMap into accumulated pairs
+||| Add a key-value pair - O(log n), last wins automatically via insert
+addPair : YAMLValue -> YAMLValue -> MapAcc -> MapAcc
+addPair = insert
+
+||| Merge pairs from a YMap into accumulated map
 ||| Only adds pairs whose keys don't already exist in acc (first wins for merge)
-mergePairs : List (YAMLValue, YAMLValue)
-          -> SnocList (YAMLValue, YAMLValue)
-          -> SnocList (YAMLValue, YAMLValue)
-mergePairs [] acc = acc
-mergePairs ((k, v) :: ps) acc =
-  if any (\(ek, _) => ek == k) (acc <>> [])
-    then mergePairs ps acc           -- Key exists, skip
-    else mergePairs ps (acc :< (k, v))  -- Key new, add
+||| O(m log n) where m = source size, n = acc size
+mergePairs : List (YAMLValue, YAMLValue) -> MapAcc -> MapAcc
+mergePairs source acc = foldl addIfAbsent acc source
+  where
+    addIfAbsent : MapAcc -> (YAMLValue, YAMLValue) -> MapAcc
+    addIfAbsent m (k, v) = case lookup k m of
+      Just _  => m            -- Key exists, keep original (first wins)
+      Nothing => insert k v m -- Key absent, add
 
 ||| Process a key-value pair, handling merge key specially
 ||| Returns updated accumulator
-addOrMerge : YAMLValue -> YAMLValue
-          -> SnocList (YAMLValue, YAMLValue)
-          -> SnocList (YAMLValue, YAMLValue)
+addOrMerge : YAMLValue -> YAMLValue -> MapAcc -> MapAcc
 addOrMerge k v acc =
   if isMergeKey k
     then case v of
@@ -164,8 +162,8 @@ addOrMerge k v acc =
       YSeq maps  => foldl (\a, m => case m of
                       YMap ps => mergePairs ps a
                       _       => a) acc maps
-      _ => addPair k v acc  -- Invalid merge value, dedup
-    else addPair k v acc    -- Regular key, dedup (last wins)
+      _ => addPair k v acc  -- Invalid merge value
+    else addPair k v acc    -- Regular key
 
 --------------------------------------------------------------------------------
 --          Flow Collection Parsers
@@ -174,7 +172,7 @@ addOrMerge k v acc =
 mutual
   flowSeq : Bounds -> SnocList YAMLValue -> RuleA True YAMLValue
 
-  flowMap : Bounds -> SnocList (YAMLValue, YAMLValue) -> RuleA True YAMLValue
+  flowMap : Bounds -> MapAcc -> RuleA True YAMLValue
 
   -- Parse a nested block value (consumes TIndent, parses value, leaves TDedent for caller)
   -- Returns just the parsed value, caller handles continuation
@@ -186,7 +184,7 @@ mutual
   -- Takes the result from blockNestedValue and continues parsing
   blockMapAfterNested :
        YAMLValue
-    -> SnocList (YAMLValue, YAMLValue)
+    -> MapAcc
     -> Res True YAMLToken xs YAMLParseError (AnchorMap, YAMLValue)
     -> (0 acc : SuffixAcc xs)
     -> Res True YAMLToken xs YAMLParseError (AnchorMap, YAMLValue)
@@ -195,13 +193,13 @@ mutual
     succT $ blockMapAfterColon k2 (addOrMerge k v sv) m' ys r
   blockMapAfterNested k sv (Succ0 (m', v) rest@(B TNewline _ :: B TDedent _ :: ys)) _ =
     -- End of this mapping level
-    Succ0 (m', YMap $ addOrMerge k v sv <>> []) rest
+    Succ0 (m', YMap $ toList (addOrMerge k v sv)) rest
   blockMapAfterNested k sv (Succ0 (m', v) rest@(B TDedent _ :: ys)) _ =
     -- End of this mapping level (no newline before dedent)
-    Succ0 (m', YMap $ addOrMerge k v sv <>> []) rest
+    Succ0 (m', YMap $ toList (addOrMerge k v sv)) rest
   blockMapAfterNested k sv (Succ0 (m', v) ys) _ =
     -- End of document
-    Succ0 (m', YMap $ addOrMerge k v sv <>> []) ys
+    Succ0 (m', YMap $ toList (addOrMerge k v sv)) ys
   blockMapAfterNested k sv (Fail0 err) _ = Fail0 err
 
   -- Handle result after parsing nested value in block sequence
@@ -258,7 +256,7 @@ mutual
   -- Parse value after colon in block mapping, then check for more pairs
   -- k: the key we're parsing the value for
   -- sv: accumulated key-value pairs so far
-  blockMapAfterColon : YAMLValue -> SnocList (YAMLValue, YAMLValue) -> RuleA True YAMLValue
+  blockMapAfterColon : YAMLValue -> MapAcc -> RuleA True YAMLValue
   -- Nested block: TNewline followed by TIndent starts nested content
   -- Use @ pattern to avoid consuming TIndent here, delegate to helper
   blockMapAfterColon k sv m (B TNewline _ :: xs@(B TIndent _ :: _)) (SA r) =
@@ -278,10 +276,10 @@ mutual
   -- End of block: TDedent signals end of this mapping level
   -- Note: Don't consume TDedent - it may be needed by outer parser
   blockMapAfterColon k sv m (B TNewline _ :: ys@(B TDedent _ :: xs)) (SA r) =
-    Succ0 (m, YMap $ addOrMerge k YNull sv <>> []) ys
+    Succ0 (m, YMap $ toList (addOrMerge k YNull sv)) ys
   -- End of mapping: just newline
   blockMapAfterColon k sv m (B TNewline _ :: xs) (SA r) =
-    Succ0 (m, YMap $ addOrMerge k YNull sv <>> []) xs
+    Succ0 (m, YMap $ toList (addOrMerge k YNull sv)) xs
   -- Value on same line
   blockMapAfterColon k sv m xs acc@(SA r) =
     case value m xs acc of
@@ -318,14 +316,14 @@ mutual
         succT $ blockMapAfterColon k2 (addOrMerge k v sv) m' ys r
       Succ0 (m', v) rest@(B TNewline _ :: B TDedent _ :: ys) =>
         -- End of this mapping level - leave TDedent for outer parser
-        Succ0 (m', YMap $ addOrMerge k v sv <>> []) rest
+        Succ0 (m', YMap $ toList (addOrMerge k v sv)) rest
       Succ0 (m', v) (B (TScalar k2) _ :: B TColon _ :: ys) =>
         -- After block scalar: key follows directly without TNewline
         -- (block scalar consumed the newline internally)
         succT $ blockMapAfterColon k2 (addOrMerge k v sv) m' ys r
       Succ0 (m', v) ys =>
         -- No more key-value pairs
-        Succ0 (m', YMap $ addOrMerge k v sv <>> []) ys
+        Succ0 (m', YMap $ toList (addOrMerge k v sv)) ys
       Fail0 err => Fail0 err
 
   value : RuleA True YAMLValue
@@ -354,21 +352,21 @@ mutual
     case succT $ value m xs r of
       -- Colon immediately after key
       Succ0 (m', k) (B TColon _ :: rest) =>
-        succT $ blockMapAfterColon k [<] m' rest r
+        succT $ blockMapAfterColon k empty m' rest r
       -- Colon on next line after key
       Succ0 (m', k) (B TNewline _ :: B TColon _ :: rest) =>
-        succT $ blockMapAfterColon k [<] m' rest r
+        succT $ blockMapAfterColon k empty m' rest r
       -- Missing colon after complex key
       Succ0 _ ys => fail ys
       Fail0 err => Fail0 err
   -- Block mapping: scalar followed by colon, delegate to blockMapAfterColon
-  value m (B (TScalar k) _ :: B TColon _ :: xs) (SA r) = succT $ blockMapAfterColon k [<] m xs r
+  value m (B (TScalar k) _ :: B TColon _ :: xs) (SA r) = succT $ blockMapAfterColon k empty m xs r
   -- Plain scalar value
   value m (B (TScalar v) _ :: xs) _ = Succ0 (m, v) xs
   value m (B TLBracket b :: B TRBracket _ :: xs) _ = Succ0 (m, YSeq []) xs
   value m (B TLBracket b :: xs) (SA r) = succT $ flowSeq b [<] m xs r
   value m (B TLBrace b :: B TRBrace _ :: xs) _ = Succ0 (m, YMap []) xs
-  value m (B TLBrace b :: xs) (SA r) = succT $ flowMap b [<] m xs r
+  value m (B TLBrace b :: xs) (SA r) = succT $ flowMap b empty m xs r
   value m xs _ = fail xs
 
   flowSeq b sv m xs acc@(SA r) = case value m xs acc of
@@ -398,7 +396,7 @@ mutual
       Succ0 (m', k) (B TColon _ :: rest) =>
         case succT $ value m' rest r of
           Succ0 (m'', v) (B TComma _ :: ys)  => succT $ flowMap b (addOrMerge k v sv) m'' ys r
-          Succ0 (m'', v) (B TRBrace _ :: ys) => Succ0 (m'', YMap $ addOrMerge k v sv <>> []) ys
+          Succ0 (m'', v) (B TRBrace _ :: ys) => Succ0 (m'', YMap $ toList (addOrMerge k v sv)) ys
           Succ0 _ (B TEOI _ :: _)            => unclosed b TLBrace
           Fail0 (B (Expected [] "end of input") _) => unclosed b TLBrace
           Succ0 _ (y :: ys)                  => unexpected y
@@ -409,7 +407,7 @@ mutual
   flowMap b sv m (B (TScalar k) _ :: B TColon _ :: xs) (SA r) =
     case succT $ value m xs r of
       Succ0 (m', v) (B TComma _ :: ys)  => succT $ flowMap b (addOrMerge k v sv) m' ys r
-      Succ0 (m', v) (B TRBrace _ :: ys) => Succ0 (m', YMap $ addOrMerge k v sv <>> []) ys
+      Succ0 (m', v) (B TRBrace _ :: ys) => Succ0 (m', YMap $ toList (addOrMerge k v sv)) ys
       Succ0 _ (B TEOI _ :: _)           => unclosed b TLBrace
       Fail0 (B (Expected [] "end of input") _) => unclosed b TLBrace
       Succ0 _ (y :: ys)                 => unexpected y

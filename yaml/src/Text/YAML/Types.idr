@@ -39,7 +39,7 @@ data YAMLValue : Type where
   ||| Timestamp value (ISO 8601 date/time)
   YTime   : AnyTime -> YAMLValue
 
-%runElab derive "YAMLValue" [Eq, Show]
+%runElab derive "YAMLValue" [Eq, Ord, Show]
 
 --------------------------------------------------------------------------------
 --          Tokens

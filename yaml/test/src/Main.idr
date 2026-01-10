@@ -285,7 +285,7 @@ prop_block_map_two = parseOk
   name: Alice
   age: 30
   """
-  (YMap [(YStr "name", YStr "Alice"), (YStr "age", YInt 30)])
+  (YMap [(YStr "age", YInt 30), (YStr "name", YStr "Alice")])
 
 prop_block_map_three : Property
 prop_block_map_three = parseOk
@@ -303,7 +303,7 @@ prop_block_map_mixed_values = parseOk
   num: 42
   bool: true
   """
-  (YMap [(YStr "str", YStr "hello"), (YStr "num", YInt 42), (YStr "bool", YBool True)])
+  (YMap [(YStr "bool", YBool True), (YStr "num", YInt 42), (YStr "str", YStr "hello")])
 
 prop_block_map_flow_value : Property
 prop_block_map_flow_value = parseOk "items: [1, 2, 3]"
@@ -474,8 +474,8 @@ prop_list_of_objects = parseOk
   - name: bob
     age: 25
   """
-  (YSeq [YMap [(YStr "name", YStr "alice"), (YStr "age", YInt 30)],
-         YMap [(YStr "name", YStr "bob"), (YStr "age", YInt 25)]])
+  (YSeq [YMap [(YStr "age", YInt 30), (YStr "name", YStr "alice")],
+         YMap [(YStr "age", YInt 25), (YStr "name", YStr "bob")]])
 
 -- Deep mixed nesting
 prop_deep_mixed_nesting : Property
@@ -733,7 +733,7 @@ prop_multiline_plain_new_key = parseOk
   - name: alice
     age: 30
   """
-  (YSeq [YMap [(YStr "name", YStr "alice"), (YStr "age", YInt 30)]])
+  (YSeq [YMap [(YStr "age", YInt 30), (YStr "name", YStr "alice")]])
 
 -- Colon in content without space (port number style) - NOT a mapping indicator
 prop_multiline_plain_colon_nospace : Property
@@ -935,7 +935,7 @@ prop_complex_key_nested_map = parseOk
   ? {name: alice, age: 30}
   : person1
   """
-  (YMap [(YMap [(YStr "name", YStr "alice"), (YStr "age", YInt 30)], YStr "person1")])
+  (YMap [(YMap [(YStr "age", YInt 30), (YStr "name", YStr "alice")], YStr "person1")])
 
 -- Mixed scalar and complex keys
 prop_complex_key_mixed : Property
@@ -958,7 +958,7 @@ prop_anchor_simple = parseOk
   anchor: &a 42
   alias: *a
   """
-  (YMap [(YStr "anchor", YInt 42), (YStr "alias", YInt 42)])
+  (YMap [(YStr "alias", YInt 42), (YStr "anchor", YInt 42)])
 
 -- Anchor on flow sequence (on same line)
 prop_anchor_seq : Property
@@ -967,8 +967,8 @@ prop_anchor_seq = parseOk
   list: &items [a, b]
   copy: *items
   """
-  (YMap [(YStr "list", YSeq [YStr "a", YStr "b"]),
-         (YStr "copy", YSeq [YStr "a", YStr "b"])])
+  (YMap [(YStr "copy", YSeq [YStr "a", YStr "b"]),
+         (YStr "list", YSeq [YStr "a", YStr "b"])])
 
 -- Anchor on flow mapping (on same line)
 prop_anchor_map : Property
@@ -977,8 +977,8 @@ prop_anchor_map = parseOk
   defaults: &def {x: 1}
   config: *def
   """
-  (YMap [(YStr "defaults", YMap [(YStr "x", YInt 1)]),
-         (YStr "config", YMap [(YStr "x", YInt 1)])])
+  (YMap [(YStr "config", YMap [(YStr "x", YInt 1)]),
+         (YStr "defaults", YMap [(YStr "x", YInt 1)])])
 
 -- Multiple aliases to same anchor
 prop_anchor_multi_alias : Property
@@ -1018,7 +1018,7 @@ prop_anchor_with_tag = parseOk
   val: &a !!str 123
   ref: *a
   """
-  (YMap [(YStr "val", YStr "123"), (YStr "ref", YStr "123")])
+  (YMap [(YStr "ref", YStr "123"), (YStr "val", YStr "123")])
 
 -- Undefined alias (error)
 prop_alias_undefined : Property
@@ -1049,7 +1049,7 @@ prop_anchor_hyphen_name = parseOk
   val: &my-anchor 42
   ref: *my-anchor
   """
-  (YMap [(YStr "val", YInt 42), (YStr "ref", YInt 42)])
+  (YMap [(YStr "ref", YInt 42), (YStr "val", YInt 42)])
 
 -- Unused anchor is valid
 prop_anchor_unused : Property
@@ -1062,8 +1062,8 @@ prop_anchor_nested = parseOk
   outer: &ref {inner: {value: 1}}
   copy: *ref
   """
-  (YMap [(YStr "outer", YMap [(YStr "inner", YMap [(YStr "value", YInt 1)])]),
-         (YStr "copy", YMap [(YStr "inner", YMap [(YStr "value", YInt 1)])])])
+  (YMap [(YStr "copy", YMap [(YStr "inner", YMap [(YStr "value", YInt 1)])]),
+         (YStr "outer", YMap [(YStr "inner", YMap [(YStr "value", YInt 1)])])])
 
 -- Anchor on block-style nested map
 prop_anchor_block_nested : Property
@@ -1085,8 +1085,8 @@ prop_anchor_block_seq = parseOk
     - b
   copy: *list
   """
-  (YMap [(YStr "items", YSeq [YStr "a", YStr "b"]),
-         (YStr "copy", YSeq [YStr "a", YStr "b"])])
+  (YMap [(YStr "copy", YSeq [YStr "a", YStr "b"]),
+         (YStr "items", YSeq [YStr "a", YStr "b"])])
 
 -- YAML 1.2 spec Example 2.10: Node for Sammy Sosa appears twice
 prop_spec_2_10 : Property
@@ -1111,10 +1111,10 @@ prop_spec_2_27 = parseOk
     family: Dumars
   ship-to: *id001
   """
-  (YMap [(YStr "bill-to", YMap [(YStr "given", YStr "Chris"),
-                                 (YStr "family", YStr "Dumars")]),
-         (YStr "ship-to", YMap [(YStr "given", YStr "Chris"),
-                                 (YStr "family", YStr "Dumars")])])
+  (YMap [(YStr "bill-to", YMap [(YStr "family", YStr "Dumars"),
+                                 (YStr "given", YStr "Chris")]),
+         (YStr "ship-to", YMap [(YStr "family", YStr "Dumars"),
+                                 (YStr "given", YStr "Chris")])])
 
 -- YAML 1.2 spec Example 6.29: Node Anchors
 prop_spec_6_29 : Property
@@ -1136,9 +1136,9 @@ prop_spec_7_1 = parseOk
   Reuse anchor: *anchor
   """
   (YMap [(YStr "First occurrence", YStr "Foo"),
-         (YStr "Second occurrence", YStr "Foo"),
          (YStr "Override anchor", YStr "Bar"),
-         (YStr "Reuse anchor", YStr "Bar")])
+         (YStr "Reuse anchor", YStr "Bar"),
+         (YStr "Second occurrence", YStr "Foo")])
 
 -- Anchor in nested sequence item
 prop_anchor_in_nested_seq : Property
@@ -1161,10 +1161,10 @@ prop_anchor_multi_level = parseOk
     ref: *inner
   copy: *outer
   """
-  (YMap [(YStr "outer", YMap [(YStr "inner", YStr "value"),
-                               (YStr "ref", YStr "value")]),
-         (YStr "copy", YMap [(YStr "inner", YStr "value"),
-                              (YStr "ref", YStr "value")])])
+  (YMap [(YStr "copy", YMap [(YStr "inner", YStr "value"),
+                              (YStr "ref", YStr "value")]),
+         (YStr "outer", YMap [(YStr "inner", YStr "value"),
+                               (YStr "ref", YStr "value")])])
 
 -- Anchor on deeply nested structure
 prop_anchor_deep_nested : Property
@@ -1190,8 +1190,8 @@ prop_anchor_seq_to_map = parseOk
   map:
     first: *item
   """
-  (YMap [(YStr "seq", YSeq [YStr "one", YStr "two"]),
-         (YStr "map", YMap [(YStr "first", YStr "one")])])
+  (YMap [(YStr "map", YMap [(YStr "first", YStr "one")]),
+         (YStr "seq", YSeq [YStr "one", YStr "two"])])
 
 -- Anchor on empty map
 prop_anchor_empty_map : Property
@@ -1200,8 +1200,8 @@ prop_anchor_empty_map = parseOk
   empty: &e {}
   copy: *e
   """
-  (YMap [(YStr "empty", YMap []),
-         (YStr "copy", YMap [])])
+  (YMap [(YStr "copy", YMap []),
+         (YStr "empty", YMap [])])
 
 -- Anchor on empty sequence
 prop_anchor_empty_seq : Property
@@ -1210,8 +1210,8 @@ prop_anchor_empty_seq = parseOk
   empty: &e []
   copy: *e
   """
-  (YMap [(YStr "empty", YSeq []),
-         (YStr "copy", YSeq [])])
+  (YMap [(YStr "copy", YSeq []),
+         (YStr "empty", YSeq [])])
 
 --------------------------------------------------------------------------------
 --          Implicit Flow Key Tests
