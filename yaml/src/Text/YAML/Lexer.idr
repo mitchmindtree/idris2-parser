@@ -575,6 +575,11 @@ blockTok bi (':' :: ' ' :: xs)       = Succ TColon (' ' :: xs)
 blockTok bi (':' :: '\n' :: xs)      = Succ TColon ('\n' :: xs)
 blockTok bi (':' :: '\r' :: xs)      = Succ TColon ('\r' :: xs)
 blockTok bi (':' :: '\t' :: xs)      = Succ TColon ('\t' :: xs)
+-- Complex key indicator
+blockTok bi ('?' :: ' ' :: xs)       = Succ TQuestion (' ' :: xs)
+blockTok bi ('?' :: '\n' :: xs)      = Succ TQuestion ('\n' :: xs)
+blockTok bi ('?' :: '\r' :: xs)      = Succ TQuestion ('\r' :: xs)
+blockTok bi ('?' :: '\t' :: xs)      = Succ TQuestion ('\t' :: xs)
 blockTok bi ('[' :: xs)              = Succ TLBracket xs
 blockTok bi ('{' :: xs)              = Succ TLBrace xs
 blockTok bi ('|' :: xs)              = TScalar . YStr <$> blockScalar False xs
@@ -591,6 +596,7 @@ blockTok bi []                       = eoiAt Same
 flowTok : Tok True e YAMLToken
 flowTok (',' :: xs)  = Succ TComma xs
 flowTok (':' :: xs)  = Succ TColon xs
+flowTok ('?' :: xs)  = Succ TQuestion xs
 flowTok ('[' :: xs)  = Succ TLBracket xs
 flowTok (']' :: xs)  = Succ TRBracket xs
 flowTok ('{' :: xs)  = Succ TLBrace xs

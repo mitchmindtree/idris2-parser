@@ -96,6 +96,9 @@ data YAMLToken : Type where
   ||| Directive (e.g., %YAML 1.2, %TAG !prefix! uri)
   TDirective : (name : String) -> (value : String) -> YAMLToken
 
+  ||| Complex key indicator '?'
+  TQuestion : YAMLToken
+
 %runElab derive "YAMLToken" [Eq, Show]
 
 export
@@ -124,6 +127,7 @@ Interpolation YAMLToken where
   interpolate TDocEnd     = "'...'"
   interpolate (TTag t)    = "tag '!\{t}'"
   interpolate (TDirective n v) = "directive '%\{n} \{v}'"
+  interpolate TQuestion   = "'?'"
 
 --------------------------------------------------------------------------------
 --          Errors

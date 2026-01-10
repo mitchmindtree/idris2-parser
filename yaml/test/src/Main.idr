@@ -852,6 +852,79 @@ prop_directive_no_doc_start = parseOk
   (YMap [(YStr "key", YStr "value")])
 
 --------------------------------------------------------------------------------
+--          Complex Key Tests
+--------------------------------------------------------------------------------
+
+-- Simple scalar with explicit ? indicator
+prop_complex_key_scalar : Property
+prop_complex_key_scalar = parseOk
+  """
+  ? key
+  : value
+  """
+  (YMap [(YStr "key", YStr "value")])
+
+-- Flow sequence as key
+prop_complex_key_flow_seq : Property
+prop_complex_key_flow_seq = parseOk
+  """
+  ? [a, b]
+  : value
+  """
+  (YMap [(YSeq [YStr "a", YStr "b"], YStr "value")])
+
+-- Flow map as key
+prop_complex_key_flow_map : Property
+prop_complex_key_flow_map = parseOk
+  """
+  ? {x: 1}
+  : value
+  """
+  (YMap [(YMap [(YStr "x", YInt 1)], YStr "value")])
+
+-- Multiple complex keys
+prop_complex_key_multiple : Property
+prop_complex_key_multiple = parseOk
+  """
+  ? [a]
+  : 1
+  ? [b]
+  : 2
+  """
+  (YMap [(YSeq [YStr "a"], YInt 1), (YSeq [YStr "b"], YInt 2)])
+
+-- Complex key with colon on same line
+prop_complex_key_inline_colon : Property
+prop_complex_key_inline_colon = parseOk
+  "? [x, y]: value"
+  (YMap [(YSeq [YStr "x", YStr "y"], YStr "value")])
+
+-- Complex key in flow context
+prop_complex_key_in_flow : Property
+prop_complex_key_in_flow = parseOk
+  "{? [a]: 1, ? [b]: 2}"
+  (YMap [(YSeq [YStr "a"], YInt 1), (YSeq [YStr "b"], YInt 2)])
+
+-- Nested map as complex key
+prop_complex_key_nested_map : Property
+prop_complex_key_nested_map = parseOk
+  """
+  ? {name: alice, age: 30}
+  : person1
+  """
+  (YMap [(YMap [(YStr "name", YStr "alice"), (YStr "age", YInt 30)], YStr "person1")])
+
+-- Mixed scalar and complex keys
+prop_complex_key_mixed : Property
+prop_complex_key_mixed = parseOk
+  """
+  simple: value
+  ? [complex]
+  : other
+  """
+  (YMap [(YStr "simple", YStr "value"), (YSeq [YStr "complex"], YStr "other")])
+
+--------------------------------------------------------------------------------
 --          Main Function
 --------------------------------------------------------------------------------
 
@@ -988,6 +1061,14 @@ properties =
     , ("prop_directive_tag", prop_directive_tag)
     , ("prop_directive_multiple", prop_directive_multiple)
     , ("prop_directive_no_doc_start", prop_directive_no_doc_start)
+    , ("prop_complex_key_scalar", prop_complex_key_scalar)
+    , ("prop_complex_key_flow_seq", prop_complex_key_flow_seq)
+    , ("prop_complex_key_flow_map", prop_complex_key_flow_map)
+    , ("prop_complex_key_multiple", prop_complex_key_multiple)
+    , ("prop_complex_key_inline_colon", prop_complex_key_inline_colon)
+    , ("prop_complex_key_in_flow", prop_complex_key_in_flow)
+    , ("prop_complex_key_nested_map", prop_complex_key_nested_map)
+    , ("prop_complex_key_mixed", prop_complex_key_mixed)
     ]
 
 main : IO ()

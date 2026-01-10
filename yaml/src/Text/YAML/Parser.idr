@@ -207,6 +207,15 @@ mutual
   -- Same level: next key-value pair (value is null)
   blockMapAfterColon k sv (B TNewline _ :: B (TScalar k2) _ :: B TColon _ :: xs) (SA r) =
     succT $ blockMapAfterColon k2 (sv :< (k, YNull)) xs r
+  -- Complex key follows (value is null for current key)
+  blockMapAfterColon k sv (B TNewline _ :: B TQuestion _ :: xs) (SA r) =
+    case succT $ value xs r of
+      Succ0 k2 (B TColon _ :: rest) =>
+        succT $ blockMapAfterColon k2 (sv :< (k, YNull)) rest r
+      Succ0 k2 (B TNewline _ :: B TColon _ :: rest) =>
+        succT $ blockMapAfterColon k2 (sv :< (k, YNull)) rest r
+      Succ0 _ ys => fail ys
+      Fail0 err => Fail0 err
   -- End of block: TDedent signals end of this mapping level
   -- Note: Don't consume TDedent - it may be needed by outer parser
   blockMapAfterColon k sv (B TNewline _ :: ys@(B TDedent _ :: xs)) (SA r) =
@@ -220,9 +229,27 @@ mutual
       Succ0 v (B TNewline _ :: B (TScalar k2) _ :: B TColon _ :: ys) =>
         -- Another key-value pair follows at same level
         succT $ blockMapAfterColon k2 (sv :< (k, v)) ys r
+      Succ0 v (B TNewline _ :: B TQuestion _ :: ys) =>
+        -- Complex key follows at same level
+        case succT $ value ys r of
+          Succ0 k2 (B TColon _ :: rest) =>
+            succT $ blockMapAfterColon k2 (sv :< (k, v)) rest r
+          Succ0 k2 (B TNewline _ :: B TColon _ :: rest) =>
+            succT $ blockMapAfterColon k2 (sv :< (k, v)) rest r
+          Succ0 _ zs => fail zs
+          Fail0 err => Fail0 err
       Succ0 v (B TNewline _ :: B TIndent _ :: B (TScalar k2) _ :: B TColon _ :: ys) =>
         -- Another key-value pair at nested level (compact notation: - key: val\n  key2: val2)
         succT $ blockMapAfterColon k2 (sv :< (k, v)) ys r
+      Succ0 v (B TNewline _ :: B TIndent _ :: B TQuestion _ :: ys) =>
+        -- Complex key at nested level
+        case succT $ value ys r of
+          Succ0 k2 (B TColon _ :: rest) =>
+            succT $ blockMapAfterColon k2 (sv :< (k, v)) rest r
+          Succ0 k2 (B TNewline _ :: B TColon _ :: rest) =>
+            succT $ blockMapAfterColon k2 (sv :< (k, v)) rest r
+          Succ0 _ zs => fail zs
+          Fail0 err => Fail0 err
       Succ0 v rest@(B TNewline _ :: B TDedent _ :: ys) =>
         -- End of this mapping level - leave TDedent for outer parser
         Succ0 (YMap $ sv <>> [(k, v)]) rest
@@ -243,6 +270,18 @@ mutual
       Fail0 err => Fail0 err
   -- Block sequence: parse first dash, then delegate to blockSeqItems
   value (B TDash _ :: xs) (SA r) = succT $ blockSeqItems [<] xs r
+  -- Complex key: ? key : value (allows any value type as key)
+  value (B TQuestion _ :: xs) (SA r) =
+    case succT $ value xs r of
+      -- Colon immediately after key
+      Succ0 k (B TColon _ :: rest) =>
+        succT $ blockMapAfterColon k [<] rest r
+      -- Colon on next line after key
+      Succ0 k (B TNewline _ :: B TColon _ :: rest) =>
+        succT $ blockMapAfterColon k [<] rest r
+      -- Missing colon after complex key
+      Succ0 _ ys => fail ys
+      Fail0 err => Fail0 err
   -- Block mapping: scalar followed by colon, delegate to blockMapAfterColon
   value (B (TScalar k) _ :: B TColon _ :: xs) (SA r) = succT $ blockMapAfterColon k [<] xs r
   -- Plain scalar value
@@ -260,6 +299,18 @@ mutual
     res@(Fail0 (B (Expected [] "end of input") _)) => unclosed b TLBracket
     res                           => failInParen b TLBracket res
 
+  -- Complex key in flow mapping: {? key: value}
+  flowMap b sv (B TQuestion _ :: xs) (SA r) =
+    case succT $ value xs r of
+      Succ0 k (B TColon _ :: rest) =>
+        case succT $ value rest r of
+          Succ0 v (B TComma _ :: ys)  => succT $ flowMap b (sv :< (k, v)) ys r
+          Succ0 v (B TRBrace _ :: ys) => Succ0 (YMap $ sv <>> [(k, v)]) ys
+          Succ0 v (B TEOI _ :: _)     => unclosed b TLBrace
+          res@(Fail0 (B (Expected [] "end of input") _)) => unclosed b TLBrace
+          res                         => failInParen b TLBrace res
+      Succ0 _ ys => fail ys  -- Missing colon after complex key
+      Fail0 err => Fail0 err
   flowMap b sv (B (TScalar k) _ :: B TColon _ :: xs) (SA r) =
     case succT $ value xs r of
       Succ0 v (B TComma _ :: ys)  => succT $ flowMap b (sv :< (k, v)) ys r
