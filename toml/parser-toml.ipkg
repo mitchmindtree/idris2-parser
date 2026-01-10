@@ -3,15 +3,11 @@ version   = 0.1.0
 authors   = "stefan-hoeck"
 sourcedir = "src"
 depends   = parser
-          , refined
+          , parser-datetime
 
 brief     = "Total and efficient parser and lexer for the TOML config file language"
 
-modules = Data.Time.Date
-        , Data.Time.Time
-
-        , Text.Time.Lexer
-        , Text.TOML.Types
+modules = Text.TOML.Types
         , Text.TOML.Lexer
         , Text.TOML.Parser
         , Text.TOML

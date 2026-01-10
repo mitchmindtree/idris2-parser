@@ -14,6 +14,17 @@ type = "local"
 path = "test"
 ipkg = "test.ipkg"
 
+[custom.all.parser-datetime]
+type = "local"
+path = "datetime"
+ipkg = "parser-datetime.ipkg"
+test = "test/test.ipkg"
+
+[custom.all.parser-datetime-test]
+type = "local"
+path = "datetime/test"
+ipkg = "test.ipkg"
+
 [custom.all.parser-toml]
 type = "local"
 path = "toml"

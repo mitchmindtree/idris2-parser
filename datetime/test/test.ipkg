@@ -1,0 +1,14 @@
+package parser-datetime-test
+version = 0.1.0
+authors = "stefan-hoeck"
+
+depends = parser-datetime
+        , hedgehog
+
+main = Main
+executable = "parser-datetime-test"
+sourcedir = "src"
+
+modules = Main
+        , Gen.DateTime
+        , Props.DateTime

@@ -1,0 +1,13 @@
+package parser-datetime
+version   = 0.1.0
+authors   = "stefan-hoeck"
+sourcedir = "src"
+depends   = parser
+          , refined
+
+brief     = "ISO 8601 date and time types and parsers for use with parser packages"
+
+modules = Data.Time.Date
+        , Data.Time.Time
+
+        , Text.Time.Lexer
