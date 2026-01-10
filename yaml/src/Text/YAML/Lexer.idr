@@ -523,6 +523,32 @@ lexTag ('!' :: xs) = TTag . ("!" ++) <$> tagChars [<] xs
 lexTag xs = TTag <$> tagChars [<] xs
 
 --------------------------------------------------------------------------------
+--          Directives
+--------------------------------------------------------------------------------
+
+||| Read directive name (alphanumeric)
+directiveName : SnocList Char -> AutoTok e String
+directiveName sc (c :: xs) =
+  if isAlpha c || isDigit c
+    then directiveName (sc :< c) xs
+    else Succ (cast sc) (c :: xs)
+directiveName sc [] = Succ (cast sc) []
+
+||| Read directive value (rest of line, trimmed)
+directiveValue : SnocList Char -> AutoTok e String
+directiveValue sc ('\n' :: xs) = Succ (cast $ rtrimLine sc) ('\n' :: xs)
+directiveValue sc ('\r' :: '\n' :: xs) = Succ (cast $ rtrimLine sc) ('\r' :: '\n' :: xs)
+directiveValue sc (c :: xs) = directiveValue (sc :< c) xs
+directiveValue sc [] = Succ (cast $ rtrimLine sc) []
+
+||| Lex a directive: %NAME value
+lexDirective : AutoTok e YAMLToken
+lexDirective xs = case directiveName [<] xs of
+  Succ name (' ' :: rest) => TDirective name <$> directiveValue [<] rest
+  Succ name rest          => Succ (TDirective name "") rest
+  Fail s e err            => Fail s e err
+
+--------------------------------------------------------------------------------
 --          Token Lexing
 --------------------------------------------------------------------------------
 
@@ -538,6 +564,8 @@ blockTok bi ('.' :: '.' :: '.' :: ' ' :: xs)  = Succ TDocEnd (' ' :: xs)
 blockTok bi ('.' :: '.' :: '.' :: '\n' :: xs) = Succ TDocEnd ('\n' :: xs)
 blockTok bi ('.' :: '.' :: '.' :: '\r' :: xs) = Succ TDocEnd ('\r' :: xs)
 blockTok bi ('.' :: '.' :: '.' :: [])         = Succ TDocEnd []
+-- Directive (must be at start of document, before ---)
+blockTok bi ('%' :: xs)              = lexDirective xs
 -- Sequence item indicator
 blockTok bi ('-' :: ' ' :: xs)       = Succ TDash (' ' :: xs)
 blockTok bi ('-' :: '\n' :: xs)      = Succ TDash ('\n' :: xs)

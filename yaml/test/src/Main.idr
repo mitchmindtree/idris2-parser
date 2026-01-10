@@ -808,6 +808,50 @@ prop_tag_in_flow = parseOk "[!!str 1, !!int \"2\"]"
   (YSeq [YStr "1", YInt 2])
 
 --------------------------------------------------------------------------------
+--          Directives
+--------------------------------------------------------------------------------
+
+-- %YAML directive is skipped, content still parses
+prop_directive_yaml : Property
+prop_directive_yaml = parseOk
+  """
+  %YAML 1.2
+  ---
+  key: value
+  """
+  (YMap [(YStr "key", YStr "value")])
+
+-- %TAG directive is skipped
+prop_directive_tag : Property
+prop_directive_tag = parseOk
+  """
+  %TAG !custom! tag:example.com,2024:
+  ---
+  key: value
+  """
+  (YMap [(YStr "key", YStr "value")])
+
+-- Multiple directives
+prop_directive_multiple : Property
+prop_directive_multiple = parseOk
+  """
+  %YAML 1.2
+  %TAG ! tag:example.com,2024:
+  ---
+  data: 123
+  """
+  (YMap [(YStr "data", YInt 123)])
+
+-- Directive without document marker still works
+prop_directive_no_doc_start : Property
+prop_directive_no_doc_start = parseOk
+  """
+  %YAML 1.2
+  key: value
+  """
+  (YMap [(YStr "key", YStr "value")])
+
+--------------------------------------------------------------------------------
 --          Main Function
 --------------------------------------------------------------------------------
 
@@ -940,6 +984,10 @@ properties =
     , ("prop_tag_on_map", prop_tag_on_map)
     , ("prop_tag_verbatim", prop_tag_verbatim)
     , ("prop_tag_in_flow", prop_tag_in_flow)
+    , ("prop_directive_yaml", prop_directive_yaml)
+    , ("prop_directive_tag", prop_directive_tag)
+    , ("prop_directive_multiple", prop_directive_multiple)
+    , ("prop_directive_no_doc_start", prop_directive_no_doc_start)
     ]
 
 main : IO ()

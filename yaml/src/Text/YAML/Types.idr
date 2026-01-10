@@ -93,6 +93,9 @@ data YAMLToken : Type where
   ||| Tag (e.g., !tag, !!str, !<uri>)
   TTag      : String -> YAMLToken
 
+  ||| Directive (e.g., %YAML 1.2, %TAG !prefix! uri)
+  TDirective : (name : String) -> (value : String) -> YAMLToken
+
 %runElab derive "YAMLToken" [Eq, Show]
 
 export
@@ -120,6 +123,7 @@ Interpolation YAMLToken where
   interpolate TDocStart   = "'---'"
   interpolate TDocEnd     = "'...'"
   interpolate (TTag t)    = "tag '!\{t}'"
+  interpolate (TDirective n v) = "directive '%\{n} \{v}'"
 
 --------------------------------------------------------------------------------
 --          Errors

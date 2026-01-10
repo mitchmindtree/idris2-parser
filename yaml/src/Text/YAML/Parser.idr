@@ -289,12 +289,13 @@ parseYAML o str = case lexYAML str of
     -- Base cases: end of stream
     go sx [] _ = Right sx
     go sx [B TEOI _] _ = Right sx
-    -- Skip whitespace/doc markers at start of each iteration
+    -- Skip whitespace/doc markers/directives at start of each iteration
     go sx (B TNewline _ :: ts) (SA r) = go sx ts r
     go sx (B TIndent _ :: ts) (SA r) = go sx ts r
     go sx (B TDedent _ :: ts) (SA r) = go sx ts r
     go sx (B TDocStart _ :: ts) (SA r) = go sx ts r
     go sx (B TDocEnd _ :: ts) (SA r) = go sx ts r
+    go sx (B (TDirective _ _) _ :: ts) (SA r) = go sx ts r  -- Skip directives
     -- Parse a document value, then skip to next doc boundary
     go sx ts (SA r) = case value ts (SA r) of
       Fail0 err => Left (toParseError o str err)
