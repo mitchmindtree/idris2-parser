@@ -112,6 +112,30 @@ rtrimLine (sx :< ' ')  = rtrimLine sx
 rtrimLine (sx :< '\t') = rtrimLine sx
 rtrimLine sx           = sx
 
+||| Check if a line starts with a block indicator (- or : followed by whitespace)
+||| These indicate a new block structure, not a plain scalar continuation
+lineStartsWithBlockIndicator : List Char -> Bool
+lineStartsWithBlockIndicator ('-' :: ' ' :: _) = True
+lineStartsWithBlockIndicator ('-' :: '\t' :: _) = True
+lineStartsWithBlockIndicator ('-' :: '\n' :: _) = True
+lineStartsWithBlockIndicator ('-' :: '\r' :: _) = True
+lineStartsWithBlockIndicator ('-' :: []) = True
+lineStartsWithBlockIndicator _ = False
+
+||| Check if a line contains a mapping indicator (: followed by whitespace/EOL)
+||| This is used to disambiguate multi-line plain scalars from new mapping entries
+lineHasMappingIndicator : List Char -> Bool
+lineHasMappingIndicator [] = False
+lineHasMappingIndicator ('\n' :: _) = False
+lineHasMappingIndicator ('\r' :: _) = False
+lineHasMappingIndicator ('#' :: _) = False  -- Comment, not content
+lineHasMappingIndicator (':' :: []) = True
+lineHasMappingIndicator (':' :: ' ' :: _) = True
+lineHasMappingIndicator (':' :: '\t' :: _) = True
+lineHasMappingIndicator (':' :: '\n' :: _) = True
+lineHasMappingIndicator (':' :: '\r' :: _) = True
+lineHasMappingIndicator (_ :: xs) = lineHasMappingIndicator xs
+
 ||| Characters that always terminate a plain scalar in block context
 isPlainEndBlock : Char -> Bool
 isPlainEndBlock '#' = True
@@ -128,22 +152,104 @@ isPlainEndFlow '{'  = True
 isPlainEndFlow '}'  = True
 isPlainEndFlow c    = isPlainEndBlock c
 
+||| Count leading spaces in a list (non-consuming helper for lookahead)
+countSpacesLookahead : Nat -> List Char -> Nat
+countSpacesLookahead n (' ' :: xs) = countSpacesLookahead (S n) xs
+countSpacesLookahead n _ = n
+
+||| Get rest of list after n spaces (non-consuming helper)
+dropSpaces : Nat -> List Char -> List Char
+dropSpaces Z xs = xs
+dropSpaces (S n) (' ' :: xs) = dropSpaces n xs
+dropSpaces _ xs = xs
+
+||| Check if we should continue plain scalar on next line
+||| Returns True if: more indented AND no block indicator at start AND no mapping indicator on line
+shouldContinuePlain : (baseIndent : Nat) -> List Char -> Bool
+shouldContinuePlain bi xs =
+  let spaces = countSpacesLookahead 0 xs
+      rest = dropSpaces spaces xs
+   in spaces > bi
+      && not (lineStartsWithBlockIndicator rest)
+      && not (lineHasMappingIndicator rest)
+
+||| Check if next line is blank (only spaces then newline)
+isBlankLine : List Char -> Bool
+isBlankLine [] = True
+isBlankLine ('\n' :: _) = True
+isBlankLine ('\r' :: '\n' :: _) = True
+isBlankLine (' ' :: xs) = isBlankLine xs
+isBlankLine _ = False
+
+mutual
+  ||| Continue reading plain scalar after deciding to continue
+  ||| Called when we've determined the next line is a continuation
+  plainScalarContinue :
+       (baseIndent : Nat)
+    -> SnocList Char
+    -> AutoTok e String
+  -- Count and skip spaces, then continue reading content
+  plainScalarContinue bi sc (' ' :: xs) = plainScalarContinue bi sc xs
+  -- Now at content - continue reading with fold (space already added to sc)
+  plainScalarContinue bi sc xs = plainScalarBlockMulti bi sc xs
+
+  ||| Handle blank line in plain scalar (preserve newline, then continue on next content line)
+  ||| After the blank line, skip leading spaces and continue
+  plainScalarBlankLine :
+       (baseIndent : Nat)
+    -> SnocList Char
+    -> AutoTok e String
+  plainScalarBlankLine bi sc (' ' :: xs) = plainScalarBlankLine bi sc xs
+  -- Reached next newline (possibly another blank line) - add newline and recurse
+  plainScalarBlankLine bi sc ('\n' :: xs) =
+    if isBlankLine xs
+      then plainScalarBlankLine bi (sc :< '\n') xs
+      else if shouldContinuePlain bi xs
+        then plainScalarContinue bi (sc :< '\n') xs  -- Add newline for blank, then continue
+        else Succ (cast $ rtrimLine sc) ('\n' :: xs)  -- End scalar
+  plainScalarBlankLine bi sc ('\r' :: '\n' :: xs) =
+    if isBlankLine xs
+      then plainScalarBlankLine bi (sc :< '\n') xs
+      else if shouldContinuePlain bi xs
+        then plainScalarContinue bi (sc :< '\n') xs
+        else Succ (cast $ rtrimLine sc) ('\r' :: '\n' :: xs)
+  plainScalarBlankLine bi sc xs = plainScalarBlockMulti bi sc xs  -- Content found after spaces
+
+  ||| Read a plain (unquoted) scalar in block context (multi-line aware)
+  ||| baseIndent is the column where the scalar started
+  plainScalarBlockMulti : (baseIndent : Nat) -> SnocList Char -> AutoTok e String
+  -- Colon followed by whitespace/EOF = mapping indicator, end scalar
+  plainScalarBlockMulti bi sc (':' :: ' ' :: xs)  = Succ (cast $ rtrimLine sc) (':' :: ' ' :: xs)
+  plainScalarBlockMulti bi sc (':' :: '\t' :: xs) = Succ (cast $ rtrimLine sc) (':' :: '\t' :: xs)
+  plainScalarBlockMulti bi sc (':' :: '\n' :: xs) = Succ (cast $ rtrimLine sc) (':' :: '\n' :: xs)
+  plainScalarBlockMulti bi sc (':' :: '\r' :: xs) = Succ (cast $ rtrimLine sc) (':' :: '\r' :: xs)
+  plainScalarBlockMulti bi sc [':']               = Succ (cast $ rtrimLine sc) [':']
+  -- Colon followed by other char = part of the scalar
+  plainScalarBlockMulti bi sc (':' :: xs)         = plainScalarBlockMulti bi (sc :< ':') xs
+  -- Newline: check for continuation using non-consuming lookahead
+  plainScalarBlockMulti bi sc ('\n' :: xs) =
+    if isBlankLine xs
+      then plainScalarBlankLine bi sc xs  -- Handle blank line
+      else if shouldContinuePlain bi xs
+        then plainScalarContinue bi (rtrimLine sc :< ' ') xs  -- Fold newline to space
+        else Succ (cast $ rtrimLine sc) ('\n' :: xs)  -- End scalar, return WITH newline
+  plainScalarBlockMulti bi sc ('\r' :: '\n' :: xs) =
+    if isBlankLine xs
+      then plainScalarBlankLine bi sc xs
+      else if shouldContinuePlain bi xs
+        then plainScalarContinue bi (rtrimLine sc :< ' ') xs
+        else Succ (cast $ rtrimLine sc) ('\r' :: '\n' :: xs)
+  -- Comment or other line-ending chars
+  plainScalarBlockMulti bi sc (c :: xs) =
+    if isPlainEndBlock c
+      then Succ (cast $ rtrimLine sc) (c :: xs)
+      else plainScalarBlockMulti bi (sc :< c) xs
+  plainScalarBlockMulti bi sc [] = Succ (cast $ rtrimLine sc) []
+
 ||| Read a plain (unquoted) scalar in block context
-||| Colon only ends the scalar if followed by whitespace (mapping indicator)
-plainScalarBlock : SnocList Char -> AutoTok e String
--- Colon followed by whitespace/EOF = mapping indicator, end scalar
-plainScalarBlock sc (':' :: ' ' :: xs)  = Succ (cast $ rtrimLine sc) (':' :: ' ' :: xs)
-plainScalarBlock sc (':' :: '\t' :: xs) = Succ (cast $ rtrimLine sc) (':' :: '\t' :: xs)
-plainScalarBlock sc (':' :: '\n' :: xs) = Succ (cast $ rtrimLine sc) (':' :: '\n' :: xs)
-plainScalarBlock sc (':' :: '\r' :: xs) = Succ (cast $ rtrimLine sc) (':' :: '\r' :: xs)
-plainScalarBlock sc [':']               = Succ (cast $ rtrimLine sc) [':']
--- Colon followed by other char = part of the scalar
-plainScalarBlock sc (':' :: xs)         = plainScalarBlock (sc :< ':') xs
-plainScalarBlock sc (c :: xs) =
-  if isPlainEndBlock c
-    then Succ (cast $ rtrimLine sc) (c :: xs)
-    else plainScalarBlock (sc :< c) xs
-plainScalarBlock sc [] = Succ (cast $ rtrimLine sc) []
+||| Uses single-line version for simplicity when indent is 0
+plainScalarBlock : (baseIndent : Nat) -> SnocList Char -> AutoTok e String
+plainScalarBlock bi = plainScalarBlockMulti bi
 
 ||| Read a plain (unquoted) scalar in flow context
 ||| In flow context, : always ends the scalar (mapping indicator)
@@ -398,35 +504,36 @@ interpretScalar s = case tryYamlInteger s of
 --------------------------------------------------------------------------------
 
 ||| Lex a single token in block context
-blockTok : Tok True e YAMLToken
+||| Takes the current block indentation level for multi-line plain scalar handling
+blockTok : (blockIndent : Nat) -> Tok True e YAMLToken
 -- Document markers (must come before dash handling)
-blockTok ('-' :: '-' :: '-' :: ' ' :: xs)  = Succ TDocStart (' ' :: xs)
-blockTok ('-' :: '-' :: '-' :: '\n' :: xs) = Succ TDocStart ('\n' :: xs)
-blockTok ('-' :: '-' :: '-' :: '\r' :: xs) = Succ TDocStart ('\r' :: xs)
-blockTok ('-' :: '-' :: '-' :: [])         = Succ TDocStart []
-blockTok ('.' :: '.' :: '.' :: ' ' :: xs)  = Succ TDocEnd (' ' :: xs)
-blockTok ('.' :: '.' :: '.' :: '\n' :: xs) = Succ TDocEnd ('\n' :: xs)
-blockTok ('.' :: '.' :: '.' :: '\r' :: xs) = Succ TDocEnd ('\r' :: xs)
-blockTok ('.' :: '.' :: '.' :: [])         = Succ TDocEnd []
+blockTok col ('-' :: '-' :: '-' :: ' ' :: xs)  = Succ TDocStart (' ' :: xs)
+blockTok col ('-' :: '-' :: '-' :: '\n' :: xs) = Succ TDocStart ('\n' :: xs)
+blockTok col ('-' :: '-' :: '-' :: '\r' :: xs) = Succ TDocStart ('\r' :: xs)
+blockTok col ('-' :: '-' :: '-' :: [])         = Succ TDocStart []
+blockTok col ('.' :: '.' :: '.' :: ' ' :: xs)  = Succ TDocEnd (' ' :: xs)
+blockTok col ('.' :: '.' :: '.' :: '\n' :: xs) = Succ TDocEnd ('\n' :: xs)
+blockTok col ('.' :: '.' :: '.' :: '\r' :: xs) = Succ TDocEnd ('\r' :: xs)
+blockTok col ('.' :: '.' :: '.' :: [])         = Succ TDocEnd []
 -- Sequence item indicator
-blockTok ('-' :: ' ' :: xs)       = Succ TDash (' ' :: xs)
-blockTok ('-' :: '\n' :: xs)      = Succ TDash ('\n' :: xs)
-blockTok ('-' :: '\r' :: xs)      = Succ TDash ('\r' :: xs)
-blockTok ('-' :: '\t' :: xs)      = Succ TDash ('\t' :: xs)
-blockTok (':' :: ' ' :: xs)       = Succ TColon (' ' :: xs)
-blockTok (':' :: '\n' :: xs)      = Succ TColon ('\n' :: xs)
-blockTok (':' :: '\r' :: xs)      = Succ TColon ('\r' :: xs)
-blockTok (':' :: '\t' :: xs)      = Succ TColon ('\t' :: xs)
-blockTok ('[' :: xs)              = Succ TLBracket xs
-blockTok ('{' :: xs)              = Succ TLBrace xs
-blockTok ('|' :: xs)              = TScalar . YStr <$> blockScalar False xs
-blockTok ('>' :: xs)              = TScalar . YStr <$> blockScalar True xs
-blockTok ('"' :: xs)              = TScalar . YStr <$> dqString [<] xs
-blockTok ('\'' :: xs)             = TScalar . YStr <$> sqString [<] xs
-blockTok ('\n' :: xs)             = Succ TNewline xs
-blockTok ('\r' :: '\n' :: xs)     = Succ TNewline xs
-blockTok (c :: xs)                = TScalar . interpretScalar <$> plainScalarBlock [< c] xs
-blockTok []                       = eoiAt Same
+blockTok col ('-' :: ' ' :: xs)       = Succ TDash (' ' :: xs)
+blockTok col ('-' :: '\n' :: xs)      = Succ TDash ('\n' :: xs)
+blockTok col ('-' :: '\r' :: xs)      = Succ TDash ('\r' :: xs)
+blockTok col ('-' :: '\t' :: xs)      = Succ TDash ('\t' :: xs)
+blockTok col (':' :: ' ' :: xs)       = Succ TColon (' ' :: xs)
+blockTok col (':' :: '\n' :: xs)      = Succ TColon ('\n' :: xs)
+blockTok col (':' :: '\r' :: xs)      = Succ TColon ('\r' :: xs)
+blockTok col (':' :: '\t' :: xs)      = Succ TColon ('\t' :: xs)
+blockTok col ('[' :: xs)              = Succ TLBracket xs
+blockTok col ('{' :: xs)              = Succ TLBrace xs
+blockTok col ('|' :: xs)              = TScalar . YStr <$> blockScalar False xs
+blockTok col ('>' :: xs)              = TScalar . YStr <$> blockScalar True xs
+blockTok col ('"' :: xs)              = TScalar . YStr <$> dqString [<] xs
+blockTok col ('\'' :: xs)             = TScalar . YStr <$> sqString [<] xs
+blockTok col ('\n' :: xs)             = Succ TNewline xs
+blockTok col ('\r' :: '\n' :: xs)     = Succ TNewline xs
+blockTok col (c :: xs)                = TScalar . interpretScalar <$> plainScalarBlock col [< c] xs
+blockTok col []                       = eoiAt Same
 
 ||| Lex a single token in flow context
 flowTok : Tok True e YAMLToken
@@ -564,14 +671,21 @@ mutual
       skipComment (_ :: ys) (SA r') = skipComment ys r'
       skipComment [] _ = Right $ sx <>> [bounded TEOI pos pos]
   lex ctx stack pos sx cs (SA r) =
-    let tok = if inFlow ctx then flowTok else blockTok
-     in case tok cs of
-          Succ val ys @{p'} =>
-            let pos2 = endPos pos p'
-                ctx2 = adjFlow ctx val
-                sx2 = sx :< bounded val pos pos2
-             in lex ctx2 stack pos2 sx2 ys r
-          Fail start errEnd e => Left $ boundedErr pos start errEnd e
+    if inFlow ctx
+      then case flowTok cs of
+             Succ val ys @{p'} =>
+               let pos2 = endPos pos p'
+                   ctx2 = adjFlow ctx val
+                   sx2 = sx :< bounded val pos pos2
+                in lex ctx2 stack pos2 sx2 ys r
+             Fail start errEnd e => Left $ boundedErr pos start errEnd e
+      else case blockTok (currentIndent stack) cs of
+             Succ val ys @{p'} =>
+               let pos2 = endPos pos p'
+                   ctx2 = adjFlow ctx val
+                   sx2 = sx :< bounded val pos pos2
+                in lex ctx2 stack pos2 sx2 ys r
+             Fail start errEnd e => Left $ boundedErr pos start errEnd e
 
 ||| Lex a YAML string into a list of tokens
 export

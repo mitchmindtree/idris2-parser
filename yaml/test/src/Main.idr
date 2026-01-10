@@ -670,6 +670,80 @@ prop_multi_doc_first_implicit = parseDocsOk
   [< YMap [(YStr "a", YInt 1)], YMap [(YStr "b", YInt 2)]]
 
 --------------------------------------------------------------------------------
+--          Multi-line Plain Scalar Tests
+--------------------------------------------------------------------------------
+
+-- Simple two-line continuation: newline folds to space
+prop_multiline_plain_simple : Property
+prop_multiline_plain_simple = parseOk
+  """
+  key: line one
+    line two
+  """
+  (YMap [(YStr "key", YStr "line one line two")])
+
+-- Three-line continuation
+prop_multiline_plain_three_lines : Property
+prop_multiline_plain_three_lines = parseOk
+  """
+  key: line one
+    line two
+    line three
+  """
+  (YMap [(YStr "key", YStr "line one line two line three")])
+
+-- Blank line preserved as newline
+prop_multiline_plain_blank_line : Property
+prop_multiline_plain_blank_line = parseOk
+  """
+  key: line one
+
+    line two
+  """
+  (YMap [(YStr "key", YStr "line one\nline two")])
+
+-- New key detected (mapping indicator ": " on continuation line)
+-- This tests the YAML 1.2.2 spec disambiguation rule
+prop_multiline_plain_new_key : Property
+prop_multiline_plain_new_key = parseOk
+  """
+  - name: alice
+    age: 30
+  """
+  (YSeq [YMap [(YStr "name", YStr "alice"), (YStr "age", YInt 30)]])
+
+-- Colon in content without space (port number style) - NOT a mapping indicator
+prop_multiline_plain_colon_nospace : Property
+prop_multiline_plain_colon_nospace = parseOk "server: localhost:8080"
+  (YMap [(YStr "server", YStr "localhost:8080")])
+
+-- URL with colon - colon followed by '/' is NOT a mapping indicator
+prop_multiline_plain_url : Property
+prop_multiline_plain_url = parseOk "url: http://example.com"
+  (YMap [(YStr "url", YStr "http://example.com")])
+
+-- Multi-line with subsequent key at same indent (ends scalar)
+prop_multiline_plain_then_sibling : Property
+prop_multiline_plain_then_sibling = parseOk
+  """
+  first: line one
+    continued
+  second: value
+  """
+  (YMap [(YStr "first", YStr "line one continued"),
+         (YStr "second", YStr "value")])
+
+-- Deep indentation continuation
+prop_multiline_plain_deep_indent : Property
+prop_multiline_plain_deep_indent = parseOk
+  """
+  outer:
+    inner: start
+      more content
+  """
+  (YMap [(YStr "outer", YMap [(YStr "inner", YStr "start more content")])])
+
+--------------------------------------------------------------------------------
 --          Main Function
 --------------------------------------------------------------------------------
 
@@ -782,6 +856,14 @@ properties =
     , ("prop_multi_doc_with_end", prop_multi_doc_with_end)
     , ("prop_multi_doc_three", prop_multi_doc_three)
     , ("prop_multi_doc_first_implicit", prop_multi_doc_first_implicit)
+    , ("prop_multiline_plain_simple", prop_multiline_plain_simple)
+    , ("prop_multiline_plain_three_lines", prop_multiline_plain_three_lines)
+    , ("prop_multiline_plain_blank_line", prop_multiline_plain_blank_line)
+    , ("prop_multiline_plain_new_key", prop_multiline_plain_new_key)
+    , ("prop_multiline_plain_colon_nospace", prop_multiline_plain_colon_nospace)
+    , ("prop_multiline_plain_url", prop_multiline_plain_url)
+    , ("prop_multiline_plain_then_sibling", prop_multiline_plain_then_sibling)
+    , ("prop_multiline_plain_deep_indent", prop_multiline_plain_deep_indent)
     ]
 
 main : IO ()
