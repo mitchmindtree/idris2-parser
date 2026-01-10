@@ -112,6 +112,10 @@ rtrimLine (sx :< ' ')  = rtrimLine sx
 rtrimLine (sx :< '\t') = rtrimLine sx
 rtrimLine sx           = sx
 
+||| Finish a scalar by trimming trailing whitespace and returning result
+finishScalar : SnocList Char -> AutoTok e String
+finishScalar sc rest = Succ (cast $ rtrimLine sc) rest
+
 ||| Check if a line starts with a block indicator (- or : followed by whitespace)
 ||| These indicate a new block structure, not a plain scalar continuation
 lineStartsWithBlockIndicator : List Char -> Bool
@@ -213,24 +217,24 @@ mutual
       then plainScalarBlankLine bi (sc :< '\n') xs
       else if shouldContinuePlain bi xs
         then plainScalarContinue bi (sc :< '\n') xs  -- Add newline for blank, then continue
-        else Succ (cast $ rtrimLine sc) ('\n' :: xs)  -- End scalar
+        else finishScalar sc ('\n' :: xs)  -- End scalar
   plainScalarBlankLine bi sc ('\r' :: '\n' :: xs) =
     if isBlankLine xs
       then plainScalarBlankLine bi (sc :< '\n') xs
       else if shouldContinuePlain bi xs
         then plainScalarContinue bi (sc :< '\n') xs
-        else Succ (cast $ rtrimLine sc) ('\r' :: '\n' :: xs)
+        else finishScalar sc ('\r' :: '\n' :: xs)
   plainScalarBlankLine bi sc xs = plainScalarBlockMulti bi sc xs  -- Content found after spaces
 
   ||| Read a plain (unquoted) scalar in block context (multi-line aware)
   ||| baseIndent is the column where the scalar started
   plainScalarBlockMulti : (baseIndent : Nat) -> SnocList Char -> AutoTok e String
   -- Colon followed by whitespace/EOF = mapping indicator, end scalar
-  plainScalarBlockMulti bi sc (':' :: ' ' :: xs)  = Succ (cast $ rtrimLine sc) (':' :: ' ' :: xs)
-  plainScalarBlockMulti bi sc (':' :: '\t' :: xs) = Succ (cast $ rtrimLine sc) (':' :: '\t' :: xs)
-  plainScalarBlockMulti bi sc (':' :: '\n' :: xs) = Succ (cast $ rtrimLine sc) (':' :: '\n' :: xs)
-  plainScalarBlockMulti bi sc (':' :: '\r' :: xs) = Succ (cast $ rtrimLine sc) (':' :: '\r' :: xs)
-  plainScalarBlockMulti bi sc [':']               = Succ (cast $ rtrimLine sc) [':']
+  plainScalarBlockMulti bi sc (':' :: ' ' :: xs)  = finishScalar sc (':' :: ' ' :: xs)
+  plainScalarBlockMulti bi sc (':' :: '\t' :: xs) = finishScalar sc (':' :: '\t' :: xs)
+  plainScalarBlockMulti bi sc (':' :: '\n' :: xs) = finishScalar sc (':' :: '\n' :: xs)
+  plainScalarBlockMulti bi sc (':' :: '\r' :: xs) = finishScalar sc (':' :: '\r' :: xs)
+  plainScalarBlockMulti bi sc [':']               = finishScalar sc [':']
   -- Colon followed by other char = part of the scalar
   plainScalarBlockMulti bi sc (':' :: xs)         = plainScalarBlockMulti bi (sc :< ':') xs
   -- Newline: check for continuation using non-consuming lookahead
@@ -239,33 +243,33 @@ mutual
       then plainScalarBlankLine bi sc xs  -- Handle blank line
       else if shouldContinuePlain bi xs
         then plainScalarContinue bi (rtrimLine sc :< ' ') xs  -- Fold newline to space
-        else Succ (cast $ rtrimLine sc) ('\n' :: xs)  -- End scalar, return WITH newline
+        else finishScalar sc ('\n' :: xs)  -- End scalar, return WITH newline
   plainScalarBlockMulti bi sc ('\r' :: '\n' :: xs) =
     if isBlankLine xs
       then plainScalarBlankLine bi sc xs
       else if shouldContinuePlain bi xs
         then plainScalarContinue bi (rtrimLine sc :< ' ') xs
-        else Succ (cast $ rtrimLine sc) ('\r' :: '\n' :: xs)
+        else finishScalar sc ('\r' :: '\n' :: xs)
   -- Comment or other line-ending chars
   plainScalarBlockMulti bi sc (c :: xs) =
     if isPlainEndBlock c
-      then Succ (cast $ rtrimLine sc) (c :: xs)
+      then finishScalar sc (c :: xs)
       else plainScalarBlockMulti bi (sc :< c) xs
-  plainScalarBlockMulti bi sc [] = Succ (cast $ rtrimLine sc) []
+  plainScalarBlockMulti bi sc [] = finishScalar sc []
 
 ||| Read a plain (unquoted) scalar in flow context
 ||| In flow context, : ends the scalar only when followed by whitespace or flow indicator
 plainScalarFlow : SnocList Char -> AutoTok e String
 plainScalarFlow sc (':' :: x :: xs) =
   if isMappingIndicatorNext x
-    then Succ (cast $ rtrimLine sc) (':' :: x :: xs)
+    then finishScalar sc (':' :: x :: xs)
     else plainScalarFlow (sc :< ':') (x :: xs)
-plainScalarFlow sc (':' :: []) = Succ (cast $ rtrimLine sc) (':' :: [])
+plainScalarFlow sc (':' :: []) = finishScalar sc (':' :: [])
 plainScalarFlow sc (c :: xs) =
   if isPlainEndFlow c
-    then Succ (cast $ rtrimLine sc) (c :: xs)
+    then finishScalar sc (c :: xs)
     else plainScalarFlow (sc :< c) xs
-plainScalarFlow sc [] = Succ (cast $ rtrimLine sc) []
+plainScalarFlow sc [] = finishScalar sc []
 
 --------------------------------------------------------------------------------
 --          Block Scalars
@@ -578,10 +582,10 @@ directiveName sc [] = Succ (cast sc) []
 
 ||| Read directive value (rest of line, trimmed)
 directiveValue : SnocList Char -> AutoTok e String
-directiveValue sc ('\n' :: xs) = Succ (cast $ rtrimLine sc) ('\n' :: xs)
-directiveValue sc ('\r' :: '\n' :: xs) = Succ (cast $ rtrimLine sc) ('\r' :: '\n' :: xs)
+directiveValue sc ('\n' :: xs) = finishScalar sc ('\n' :: xs)
+directiveValue sc ('\r' :: '\n' :: xs) = finishScalar sc ('\r' :: '\n' :: xs)
 directiveValue sc (c :: xs) = directiveValue (sc :< c) xs
-directiveValue sc [] = Succ (cast $ rtrimLine sc) []
+directiveValue sc [] = finishScalar sc []
 
 ||| Lex a directive: %NAME value
 lexDirective : AutoTok e YAMLToken
