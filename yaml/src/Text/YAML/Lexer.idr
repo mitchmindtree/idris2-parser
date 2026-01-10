@@ -35,9 +35,18 @@ yamlControl '\r' = True
 yamlControl '\t' = True
 yamlControl x    = x < ' '
 
+||| Check if all characters in a list are hex digits
+allHex : List Char -> Bool
+allHex = all isHexDigit
+
+||| Convert a list of hex digit characters to a Char (unicode codepoint)
+||| Converts hex chars to Nat (the codepoint value), then casts to Char
+hexChar : List Char -> Char
+hexChar = cast . foldl (\acc, c => acc * 16 + hexDigit c) 0
+
 ||| Read a double-quoted string with escape sequences
 dqString : SnocList Char -> AutoTok e String
-dqString sc ('\\' :: c :: xs) = case c of
+dqString sc ('\\' :: esc :: xs) = case esc of
   '"'  => dqString (sc :< '"') xs
   '\\' => dqString (sc :< '\\') xs
   '/'  => dqString (sc :< '/') xs
@@ -48,19 +57,29 @@ dqString sc ('\\' :: c :: xs) = case c of
   'f'  => dqString (sc :< '\f') xs
   '0'  => dqString (sc :< '\0') xs
   ' '  => dqString (sc :< ' ') xs
+  'a'  => dqString (sc :< '\x07') xs   -- Bell
+  'v'  => dqString (sc :< '\x0B') xs   -- Vertical tab
+  'e'  => dqString (sc :< '\x1B') xs   -- Escape
+  '_'  => dqString (sc :< '\xA0') xs   -- Non-breaking space
+  'N'  => dqString (sc :< '\x85') xs   -- Next line
+  'L'  => dqString (sc :< '\x2028') xs -- Line separator
+  'P'  => dqString (sc :< '\x2029') xs -- Paragraph separator
   'x'  => case xs of
     a :: b :: t =>
-      if isHexDigit a && isHexDigit b
-        then let c' = cast (hexDigit a * 16 + hexDigit b)
-              in dqString (sc :< c') t
+      if allHex [a, b]
+        then dqString (sc :< hexChar [a, b]) t
         else invalidEscape p t
     _ => invalidEscape p xs
   'u'  => case xs of
-    a :: b :: c' :: d :: t =>
-      if isHexDigit a && isHexDigit b && isHexDigit c' && isHexDigit d
-        then let v = hexDigit a * 0x1000 + hexDigit b * 0x100 +
-                     hexDigit c' * 0x10 + hexDigit d
-              in dqString (sc :< cast v) t
+    a :: b :: c :: d :: t =>
+      if allHex [a, b, c, d]
+        then dqString (sc :< hexChar [a, b, c, d]) t
+        else invalidEscape p t
+    _ => invalidEscape p xs
+  'U'  => case xs of
+    a :: b :: c :: d :: e :: f :: g :: h :: t =>
+      if allHex [a, b, c, d, e, f, g, h]
+        then dqString (sc :< hexChar [a, b, c, d, e, f, g, h]) t
         else invalidEscape p t
     _ => invalidEscape p xs
   _    => invalidEscape p xs

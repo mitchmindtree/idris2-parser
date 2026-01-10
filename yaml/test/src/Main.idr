@@ -112,6 +112,30 @@ prop_string_escape_newline = parseOk "\"hello\\nworld\"" (YStr "hello\nworld")
 prop_string_escape_tab : Property
 prop_string_escape_tab = parseOk "\"hello\\tworld\"" (YStr "hello\tworld")
 
+prop_string_escape_bell : Property
+prop_string_escape_bell = parseOk "\"\\a\"" (YStr "\x07")
+
+prop_string_escape_vtab : Property
+prop_string_escape_vtab = parseOk "\"\\v\"" (YStr "\x0B")
+
+prop_string_escape_esc : Property
+prop_string_escape_esc = parseOk "\"\\e\"" (YStr "\x1B")
+
+prop_string_escape_nbsp : Property
+prop_string_escape_nbsp = parseOk "\"\\_\"" (YStr "\xA0")
+
+prop_string_escape_next_line : Property
+prop_string_escape_next_line = parseOk "\"\\N\"" (YStr "\x85")
+
+prop_string_escape_line_sep : Property
+prop_string_escape_line_sep = parseOk "\"\\L\"" (YStr "\x2028")
+
+prop_string_escape_para_sep : Property
+prop_string_escape_para_sep = parseOk "\"\\P\"" (YStr "\x2029")
+
+prop_string_escape_unicode32 : Property
+prop_string_escape_unicode32 = parseOk "\"\\U0001F600\"" (YStr "\x1F600")
+
 --------------------------------------------------------------------------------
 --          Flow Sequence Tests
 --------------------------------------------------------------------------------
@@ -643,6 +667,14 @@ properties =
     , ("prop_string_single_quoted", prop_string_single_quoted)
     , ("prop_string_escape_newline", prop_string_escape_newline)
     , ("prop_string_escape_tab", prop_string_escape_tab)
+    , ("prop_string_escape_bell", prop_string_escape_bell)
+    , ("prop_string_escape_vtab", prop_string_escape_vtab)
+    , ("prop_string_escape_esc", prop_string_escape_esc)
+    , ("prop_string_escape_nbsp", prop_string_escape_nbsp)
+    , ("prop_string_escape_next_line", prop_string_escape_next_line)
+    , ("prop_string_escape_line_sep", prop_string_escape_line_sep)
+    , ("prop_string_escape_para_sep", prop_string_escape_para_sep)
+    , ("prop_string_escape_unicode32", prop_string_escape_unicode32)
     , ("prop_seq_empty", prop_seq_empty)
     , ("prop_seq_single", prop_seq_single)
     , ("prop_seq_multiple", prop_seq_multiple)
