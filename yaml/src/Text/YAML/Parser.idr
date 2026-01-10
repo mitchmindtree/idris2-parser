@@ -132,8 +132,16 @@ isMergeKey : YAMLValue -> Bool
 isMergeKey (YStr "<<") = True
 isMergeKey _ = False
 
+||| Add a key-value pair, removing any existing pair with the same key (last wins)
+addPair : YAMLValue -> YAMLValue
+       -> SnocList (YAMLValue, YAMLValue)
+       -> SnocList (YAMLValue, YAMLValue)
+addPair k v acc =
+  let filtered = filter (\(ek, _) => ek /= k) (acc <>> [])
+  in (Lin <>< filtered) :< (k, v)
+
 ||| Merge pairs from a YMap into accumulated pairs
-||| Only adds pairs whose keys don't already exist in acc
+||| Only adds pairs whose keys don't already exist in acc (first wins for merge)
 mergePairs : List (YAMLValue, YAMLValue)
           -> SnocList (YAMLValue, YAMLValue)
           -> SnocList (YAMLValue, YAMLValue)
@@ -156,8 +164,8 @@ addOrMerge k v acc =
       YSeq maps  => foldl (\a, m => case m of
                       YMap ps => mergePairs ps a
                       _       => a) acc maps
-      _ => acc :< (k, v)  -- Invalid merge value, keep as-is
-    else acc :< (k, v)
+      _ => addPair k v acc  -- Invalid merge value, dedup
+    else addPair k v acc    -- Regular key, dedup (last wins)
 
 --------------------------------------------------------------------------------
 --          Flow Collection Parsers

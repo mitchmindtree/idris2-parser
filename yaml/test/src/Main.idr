@@ -1208,7 +1208,7 @@ prop_merge_simple = parseOk
   (YMap [(YStr "base", YMap [(YStr "a", YInt 1), (YStr "b", YInt 2)]),
          (YStr "extended", YMap [(YStr "a", YInt 1), (YStr "b", YInt 2), (YStr "c", YInt 3)])])
 
--- Merge with explicit key after (both present since we keep duplicates)
+-- Merge with explicit key after (explicit key wins due to deduplication)
 prop_merge_with_override : Property
 prop_merge_with_override = parseOk
   """
@@ -1219,7 +1219,7 @@ prop_merge_with_override = parseOk
     x: 2
   """
   (YMap [(YStr "base", YMap [(YStr "x", YInt 1)]),
-         (YStr "child", YMap [(YStr "x", YInt 1), (YStr "x", YInt 2)])])
+         (YStr "child", YMap [(YStr "x", YInt 2)])])
 
 -- Merge sequence of maps
 prop_merge_sequence : Property
