@@ -1191,6 +1191,95 @@ prop_anchor_empty_seq = parseOk
          (YStr "copy", YSeq [])])
 
 --------------------------------------------------------------------------------
+--          Merge Key Tests
+--------------------------------------------------------------------------------
+
+-- Simple merge: << inserts pairs from anchored map
+prop_merge_simple : Property
+prop_merge_simple = parseOk
+  """
+  base: &base
+    a: 1
+    b: 2
+  extended:
+    <<: *base
+    c: 3
+  """
+  (YMap [(YStr "base", YMap [(YStr "a", YInt 1), (YStr "b", YInt 2)]),
+         (YStr "extended", YMap [(YStr "a", YInt 1), (YStr "b", YInt 2), (YStr "c", YInt 3)])])
+
+-- Merge with explicit key after (both present since we keep duplicates)
+prop_merge_with_override : Property
+prop_merge_with_override = parseOk
+  """
+  base: &base
+    x: 1
+  child:
+    <<: *base
+    x: 2
+  """
+  (YMap [(YStr "base", YMap [(YStr "x", YInt 1)]),
+         (YStr "child", YMap [(YStr "x", YInt 1), (YStr "x", YInt 2)])])
+
+-- Merge sequence of maps
+prop_merge_sequence : Property
+prop_merge_sequence = parseOk
+  """
+  a: &a {x: 1}
+  b: &b {y: 2}
+  merged:
+    <<: [*a, *b]
+    z: 3
+  """
+  (YMap [(YStr "a", YMap [(YStr "x", YInt 1)]),
+         (YStr "b", YMap [(YStr "y", YInt 2)]),
+         (YStr "merged", YMap [(YStr "x", YInt 1), (YStr "y", YInt 2), (YStr "z", YInt 3)])])
+
+-- Merge in flow mapping
+prop_merge_flow : Property
+prop_merge_flow = parseOk
+  "base: &b {a: 1}\nchild: {<<: *b, b: 2}"
+  (YMap [(YStr "base", YMap [(YStr "a", YInt 1)]),
+         (YStr "child", YMap [(YStr "a", YInt 1), (YStr "b", YInt 2)])])
+
+-- Multiple merge keys in same mapping
+prop_merge_multiple : Property
+prop_merge_multiple = parseOk
+  """
+  a: &a {x: 1}
+  b: &b {y: 2}
+  c:
+    <<: *a
+    <<: *b
+    z: 3
+  """
+  (YMap [(YStr "a", YMap [(YStr "x", YInt 1)]),
+         (YStr "b", YMap [(YStr "y", YInt 2)]),
+         (YStr "c", YMap [(YStr "x", YInt 1), (YStr "y", YInt 2), (YStr "z", YInt 3)])])
+
+-- Merge non-mapping (keeps as regular key-value pair)
+prop_merge_non_map : Property
+prop_merge_non_map = parseOk
+  "x:\n  <<: not a map"
+  (YMap [(YStr "x", YMap [(YStr "<<", YStr "not a map")])])
+
+-- Quoted << is not a merge key (regular string key)
+prop_merge_quoted_not_merge : Property
+prop_merge_quoted_not_merge = parseOk
+  "\"<<\": value"
+  (YMap [(YStr "<<", YStr "value")])
+
+-- Merge key with null value (no-op)
+prop_merge_null : Property
+prop_merge_null = parseOk
+  """
+  x:
+    <<:
+    a: 1
+  """
+  (YMap [(YStr "x", YMap [(YStr "a", YInt 1)])])
+
+--------------------------------------------------------------------------------
 --          Main Function
 --------------------------------------------------------------------------------
 
@@ -1361,6 +1450,14 @@ properties =
     , ("prop_anchor_seq_to_map", prop_anchor_seq_to_map)
     , ("prop_anchor_empty_map", prop_anchor_empty_map)
     , ("prop_anchor_empty_seq", prop_anchor_empty_seq)
+    , ("prop_merge_simple", prop_merge_simple)
+    , ("prop_merge_with_override", prop_merge_with_override)
+    , ("prop_merge_sequence", prop_merge_sequence)
+    , ("prop_merge_flow", prop_merge_flow)
+    , ("prop_merge_multiple", prop_merge_multiple)
+    , ("prop_merge_non_map", prop_merge_non_map)
+    , ("prop_merge_quoted_not_merge", prop_merge_quoted_not_merge)
+    , ("prop_merge_null", prop_merge_null)
     ]
 
 main : IO ()

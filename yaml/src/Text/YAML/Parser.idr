@@ -124,6 +124,42 @@ applyTag tag v = case normalizeTag tag of
   _       => v  -- Unknown tag - keep as-is
 
 --------------------------------------------------------------------------------
+--          Merge Key Helpers
+--------------------------------------------------------------------------------
+
+||| Check if value is the merge key indicator
+isMergeKey : YAMLValue -> Bool
+isMergeKey (YStr "<<") = True
+isMergeKey _ = False
+
+||| Merge pairs from a YMap into accumulated pairs
+||| Only adds pairs whose keys don't already exist in acc
+mergePairs : List (YAMLValue, YAMLValue)
+          -> SnocList (YAMLValue, YAMLValue)
+          -> SnocList (YAMLValue, YAMLValue)
+mergePairs [] acc = acc
+mergePairs ((k, v) :: ps) acc =
+  if any (\(ek, _) => ek == k) (acc <>> [])
+    then mergePairs ps acc           -- Key exists, skip
+    else mergePairs ps (acc :< (k, v))  -- Key new, add
+
+||| Process a key-value pair, handling merge key specially
+||| Returns updated accumulator
+addOrMerge : YAMLValue -> YAMLValue
+          -> SnocList (YAMLValue, YAMLValue)
+          -> SnocList (YAMLValue, YAMLValue)
+addOrMerge k v acc =
+  if isMergeKey k
+    then case v of
+      YNull      => acc  -- No-op for null merge value
+      YMap pairs => mergePairs pairs acc
+      YSeq maps  => foldl (\a, m => case m of
+                      YMap ps => mergePairs ps a
+                      _       => a) acc maps
+      _ => acc :< (k, v)  -- Invalid merge value, keep as-is
+    else acc :< (k, v)
+
+--------------------------------------------------------------------------------
 --          Flow Collection Parsers
 --------------------------------------------------------------------------------
 
@@ -148,16 +184,16 @@ mutual
     -> Res True YAMLToken xs YAMLParseError (AnchorMap, YAMLValue)
   blockMapAfterNested k sv (Succ0 (m', v) (B TNewline _ :: B TDedent _ :: B (TScalar k2) _ :: B TColon _ :: ys)) (SA r) =
     -- After nested block, more pairs at parent level
-    succT $ blockMapAfterColon k2 (sv :< (k, v)) m' ys r
+    succT $ blockMapAfterColon k2 (addOrMerge k v sv) m' ys r
   blockMapAfterNested k sv (Succ0 (m', v) rest@(B TNewline _ :: B TDedent _ :: ys)) _ =
     -- End of this mapping level
-    Succ0 (m', YMap $ sv <>> [(k, v)]) rest
+    Succ0 (m', YMap $ addOrMerge k v sv <>> []) rest
   blockMapAfterNested k sv (Succ0 (m', v) rest@(B TDedent _ :: ys)) _ =
     -- End of this mapping level (no newline before dedent)
-    Succ0 (m', YMap $ sv <>> [(k, v)]) rest
+    Succ0 (m', YMap $ addOrMerge k v sv <>> []) rest
   blockMapAfterNested k sv (Succ0 (m', v) ys) _ =
     -- End of document
-    Succ0 (m', YMap $ sv <>> [(k, v)]) ys
+    Succ0 (m', YMap $ addOrMerge k v sv <>> []) ys
   blockMapAfterNested k sv (Fail0 err) _ = Fail0 err
 
   -- Handle result after parsing nested value in block sequence
@@ -221,67 +257,67 @@ mutual
     succT $ blockMapAfterNested k sv (blockNestedValue m xs r) r
   -- Same level: next key-value pair (value is null)
   blockMapAfterColon k sv m (B TNewline _ :: B (TScalar k2) _ :: B TColon _ :: xs) (SA r) =
-    succT $ blockMapAfterColon k2 (sv :< (k, YNull)) m xs r
+    succT $ blockMapAfterColon k2 (addOrMerge k YNull sv) m xs r
   -- Complex key follows (value is null for current key)
   blockMapAfterColon k sv m (B TNewline _ :: B TQuestion _ :: xs) (SA r) =
     case succT $ value m xs r of
       Succ0 (m', k2) (B TColon _ :: rest) =>
-        succT $ blockMapAfterColon k2 (sv :< (k, YNull)) m' rest r
+        succT $ blockMapAfterColon k2 (addOrMerge k YNull sv) m' rest r
       Succ0 (m', k2) (B TNewline _ :: B TColon _ :: rest) =>
-        succT $ blockMapAfterColon k2 (sv :< (k, YNull)) m' rest r
+        succT $ blockMapAfterColon k2 (addOrMerge k YNull sv) m' rest r
       Succ0 _ ys => fail ys
       Fail0 err => Fail0 err
   -- End of block: TDedent signals end of this mapping level
   -- Note: Don't consume TDedent - it may be needed by outer parser
   blockMapAfterColon k sv m (B TNewline _ :: ys@(B TDedent _ :: xs)) (SA r) =
-    Succ0 (m, YMap $ sv <>> [(k, YNull)]) ys
+    Succ0 (m, YMap $ addOrMerge k YNull sv <>> []) ys
   -- End of mapping: just newline
   blockMapAfterColon k sv m (B TNewline _ :: xs) (SA r) =
-    Succ0 (m, YMap $ sv <>> [(k, YNull)]) xs
+    Succ0 (m, YMap $ addOrMerge k YNull sv <>> []) xs
   -- Value on same line
   blockMapAfterColon k sv m xs acc@(SA r) =
     case value m xs acc of
       Succ0 (m', v) (B TNewline _ :: B (TScalar k2) _ :: B TColon _ :: ys) =>
         -- Another key-value pair follows at same level
-        succT $ blockMapAfterColon k2 (sv :< (k, v)) m' ys r
+        succT $ blockMapAfterColon k2 (addOrMerge k v sv) m' ys r
       Succ0 (m', v) (B TNewline _ :: B TQuestion _ :: ys) =>
         -- Complex key follows at same level
         case succT $ value m' ys r of
           Succ0 (m'', k2) (B TColon _ :: rest) =>
-            succT $ blockMapAfterColon k2 (sv :< (k, v)) m'' rest r
+            succT $ blockMapAfterColon k2 (addOrMerge k v sv) m'' rest r
           Succ0 (m'', k2) (B TNewline _ :: B TColon _ :: rest) =>
-            succT $ blockMapAfterColon k2 (sv :< (k, v)) m'' rest r
+            succT $ blockMapAfterColon k2 (addOrMerge k v sv) m'' rest r
           Succ0 _ zs => fail zs
           Fail0 err => Fail0 err
       Succ0 (m', v) (B TNewline _ :: B TIndent _ :: B (TScalar k2) _ :: B TColon _ :: ys) =>
         -- Another key-value pair at nested level (compact notation: - key: val\n  key2: val2)
-        succT $ blockMapAfterColon k2 (sv :< (k, v)) m' ys r
+        succT $ blockMapAfterColon k2 (addOrMerge k v sv) m' ys r
       Succ0 (m', v) (B TNewline _ :: B TIndent _ :: B TQuestion _ :: ys) =>
         -- Complex key at nested level
         case succT $ value m' ys r of
           Succ0 (m'', k2) (B TColon _ :: rest) =>
-            succT $ blockMapAfterColon k2 (sv :< (k, v)) m'' rest r
+            succT $ blockMapAfterColon k2 (addOrMerge k v sv) m'' rest r
           Succ0 (m'', k2) (B TNewline _ :: B TColon _ :: rest) =>
-            succT $ blockMapAfterColon k2 (sv :< (k, v)) m'' rest r
+            succT $ blockMapAfterColon k2 (addOrMerge k v sv) m'' rest r
           Succ0 _ zs => fail zs
           Fail0 err => Fail0 err
       -- After anchor+nested block: dedent followed by more keys at same level
       -- Only continue if value was a compound type (map/seq) - scalar values don't create dedents
       -- (e.g., "key: &anchor\n  nested\nsibling: val" - sibling is part of same map)
       Succ0 (m', v@(YMap _)) (B TNewline _ :: B TDedent _ :: B (TScalar k2) _ :: B TColon _ :: ys) =>
-        succT $ blockMapAfterColon k2 (sv :< (k, v)) m' ys r
+        succT $ blockMapAfterColon k2 (addOrMerge k v sv) m' ys r
       Succ0 (m', v@(YSeq _)) (B TNewline _ :: B TDedent _ :: B (TScalar k2) _ :: B TColon _ :: ys) =>
-        succT $ blockMapAfterColon k2 (sv :< (k, v)) m' ys r
+        succT $ blockMapAfterColon k2 (addOrMerge k v sv) m' ys r
       Succ0 (m', v) rest@(B TNewline _ :: B TDedent _ :: ys) =>
         -- End of this mapping level - leave TDedent for outer parser
-        Succ0 (m', YMap $ sv <>> [(k, v)]) rest
+        Succ0 (m', YMap $ addOrMerge k v sv <>> []) rest
       Succ0 (m', v) (B (TScalar k2) _ :: B TColon _ :: ys) =>
         -- After block scalar: key follows directly without TNewline
         -- (block scalar consumed the newline internally)
-        succT $ blockMapAfterColon k2 (sv :< (k, v)) m' ys r
+        succT $ blockMapAfterColon k2 (addOrMerge k v sv) m' ys r
       Succ0 (m', v) ys =>
         -- No more key-value pairs
-        Succ0 (m', YMap $ sv <>> [(k, v)]) ys
+        Succ0 (m', YMap $ addOrMerge k v sv <>> []) ys
       Fail0 err => Fail0 err
 
   value : RuleA True YAMLValue
@@ -341,8 +377,8 @@ mutual
     case succT $ value m xs r of
       Succ0 (m', k) (B TColon _ :: rest) =>
         case succT $ value m' rest r of
-          Succ0 (m'', v) (B TComma _ :: ys)  => succT $ flowMap b (sv :< (k, v)) m'' ys r
-          Succ0 (m'', v) (B TRBrace _ :: ys) => Succ0 (m'', YMap $ sv <>> [(k, v)]) ys
+          Succ0 (m'', v) (B TComma _ :: ys)  => succT $ flowMap b (addOrMerge k v sv) m'' ys r
+          Succ0 (m'', v) (B TRBrace _ :: ys) => Succ0 (m'', YMap $ addOrMerge k v sv <>> []) ys
           Succ0 _ (B TEOI _ :: _)            => unclosed b TLBrace
           Fail0 (B (Expected [] "end of input") _) => unclosed b TLBrace
           Succ0 _ (y :: ys)                  => unexpected y
@@ -352,8 +388,8 @@ mutual
       Fail0 err => Fail0 err
   flowMap b sv m (B (TScalar k) _ :: B TColon _ :: xs) (SA r) =
     case succT $ value m xs r of
-      Succ0 (m', v) (B TComma _ :: ys)  => succT $ flowMap b (sv :< (k, v)) m' ys r
-      Succ0 (m', v) (B TRBrace _ :: ys) => Succ0 (m', YMap $ sv <>> [(k, v)]) ys
+      Succ0 (m', v) (B TComma _ :: ys)  => succT $ flowMap b (addOrMerge k v sv) m' ys r
+      Succ0 (m', v) (B TRBrace _ :: ys) => Succ0 (m', YMap $ addOrMerge k v sv <>> []) ys
       Succ0 _ (B TEOI _ :: _)           => unclosed b TLBrace
       Fail0 (B (Expected [] "end of input") _) => unclosed b TLBrace
       Succ0 _ (y :: ys)                 => unexpected y
