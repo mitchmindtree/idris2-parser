@@ -90,6 +90,9 @@ data YAMLToken : Type where
   ||| Document end marker '...'
   TDocEnd   : YAMLToken
 
+  ||| Tag (e.g., !tag, !!str, !<uri>)
+  TTag      : String -> YAMLToken
+
 %runElab derive "YAMLToken" [Eq, Show]
 
 export
@@ -116,6 +119,7 @@ Interpolation YAMLToken where
   interpolate TEOI        = "end of input"
   interpolate TDocStart   = "'---'"
   interpolate TDocEnd     = "'...'"
+  interpolate (TTag t)    = "tag '!\{t}'"
 
 --------------------------------------------------------------------------------
 --          Errors

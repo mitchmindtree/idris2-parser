@@ -420,6 +420,7 @@ mutual
 
 ||| Try to parse YAML-specific integer formats (hex, octal)
 ||| Standard decimal integers are handled by `tryNumber`
+export
 tryYamlInteger : String -> Maybe Integer
 tryYamlInteger s = case unpack s of
   '0' :: 'x' :: rest => case tok (hex {e=()}) rest of
@@ -440,6 +441,7 @@ tryTimestamp s =
 
 ||| Try to parse a standard numeric value using the `number` shifter.
 ||| Returns Just if the entire string is a valid number, Nothing otherwise.
+export
 tryNumber : String -> Maybe YAMLValue
 tryNumber s =
   let cs = unpack s
@@ -488,6 +490,39 @@ interpretScalar s = case tryYamlInteger s of
       Nothing => YStr s
 
 --------------------------------------------------------------------------------
+--          Tags
+--------------------------------------------------------------------------------
+
+||| Valid characters in a tag name (simplified - alphanumeric, -, _)
+isTagChar : Char -> Bool
+isTagChar c = isAlphaNum c || c == '-' || c == '_' || c == '.'
+
+||| Read tag characters
+tagChars : SnocList Char -> AutoTok e String
+tagChars sc (c :: xs) =
+  if isTagChar c
+    then tagChars (sc :< c) xs
+    else Succ (cast sc) (c :: xs)
+tagChars sc [] = Succ (cast sc) []
+
+||| Lex a verbatim tag: !<uri>
+||| Read until closing >
+verbatimTag : SnocList Char -> AutoTok e String
+verbatimTag sc ('>' :: xs) = Succ (cast sc) xs
+verbatimTag sc (c :: xs) = verbatimTag (sc :< c) xs
+verbatimTag sc [] = eoiAt p  -- Unclosed verbatim tag
+
+||| Lex a tag token
+||| Formats: !name, !!name, !<uri>
+lexTag : AutoTok e YAMLToken
+-- Verbatim tag: !<uri>
+lexTag ('<' :: xs) = TTag <$> verbatimTag [<] xs
+-- Core schema tag: !!name
+lexTag ('!' :: xs) = TTag . ("!" ++) <$> tagChars [<] xs
+-- Local tag: !name
+lexTag xs = TTag <$> tagChars [<] xs
+
+--------------------------------------------------------------------------------
 --          Token Lexing
 --------------------------------------------------------------------------------
 
@@ -518,6 +553,7 @@ blockTok bi ('|' :: xs)              = TScalar . YStr <$> blockScalar False xs
 blockTok bi ('>' :: xs)              = TScalar . YStr <$> blockScalar True xs
 blockTok bi ('"' :: xs)              = TScalar . YStr <$> dqString [<] xs
 blockTok bi ('\'' :: xs)             = TScalar . YStr <$> sqString [<] xs
+blockTok bi ('!' :: xs)              = lexTag xs
 blockTok bi ('\n' :: xs)             = Succ TNewline xs
 blockTok bi ('\r' :: '\n' :: xs)     = Succ TNewline xs
 blockTok bi (c :: xs)                = TScalar . interpretScalar <$> plainScalarBlockMulti bi [< c] xs
@@ -533,6 +569,7 @@ flowTok ('{' :: xs)  = Succ TLBrace xs
 flowTok ('}' :: xs)  = Succ TRBrace xs
 flowTok ('"' :: xs)  = TScalar . YStr <$> dqString [<] xs
 flowTok ('\'' :: xs) = TScalar . YStr <$> sqString [<] xs
+flowTok ('!' :: xs)  = lexTag xs
 flowTok (c :: xs)    = TScalar . interpretScalar <$> plainScalarFlow [< c] xs
 flowTok []           = eoiAt Same
 

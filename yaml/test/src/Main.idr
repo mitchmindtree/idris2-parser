@@ -744,6 +744,70 @@ prop_multiline_plain_deep_indent = parseOk
   (YMap [(YStr "outer", YMap [(YStr "inner", YStr "start more content")])])
 
 --------------------------------------------------------------------------------
+--          Tags
+--------------------------------------------------------------------------------
+
+-- !!str forces value to string (number becomes string)
+prop_tag_str_number : Property
+prop_tag_str_number = parseOk "value: !!str 123"
+  (YMap [(YStr "value", YStr "123")])
+
+-- !!str on boolean
+prop_tag_str_bool : Property
+prop_tag_str_bool = parseOk "value: !!str true"
+  (YMap [(YStr "value", YStr "true")])
+
+-- !!int forces string to integer
+prop_tag_int_string : Property
+prop_tag_int_string = parseOk "value: !!int \"42\""
+  (YMap [(YStr "value", YInt 42)])
+
+-- !!int on float truncates
+prop_tag_int_float : Property
+prop_tag_int_float = parseOk "value: !!int 3.7"
+  (YMap [(YStr "value", YInt 3)])
+
+-- !!float forces int to float
+prop_tag_float_int : Property
+prop_tag_float_int = parseOk "value: !!float 42"
+  (YMap [(YStr "value", YFloat 42.0)])
+
+-- !!bool forces string to boolean
+prop_tag_bool_string : Property
+prop_tag_bool_string = parseOk "value: !!bool \"true\""
+  (YMap [(YStr "value", YBool True)])
+
+-- !!null forces to null
+prop_tag_null : Property
+prop_tag_null = parseOk "value: !!null anything"
+  (YMap [(YStr "value", YNull)])
+
+-- Local tag (! prefix) - kept as-is since we don't know how to interpret
+prop_tag_local : Property
+prop_tag_local = parseOk "value: !custom data"
+  (YMap [(YStr "value", YStr "data")])
+
+-- Tag on sequence
+prop_tag_on_seq : Property
+prop_tag_on_seq = parseOk "value: !!seq [1, 2]"
+  (YMap [(YStr "value", YSeq [YInt 1, YInt 2])])
+
+-- Tag on mapping
+prop_tag_on_map : Property
+prop_tag_on_map = parseOk "value: !!map {a: 1}"
+  (YMap [(YStr "value", YMap [(YStr "a", YInt 1)])])
+
+-- Verbatim tag syntax !<uri>
+prop_tag_verbatim : Property
+prop_tag_verbatim = parseOk "value: !<tag:yaml.org,2002:str> 123"
+  (YMap [(YStr "value", YStr "123")])
+
+-- Tag in flow context
+prop_tag_in_flow : Property
+prop_tag_in_flow = parseOk "[!!str 1, !!int \"2\"]"
+  (YSeq [YStr "1", YInt 2])
+
+--------------------------------------------------------------------------------
 --          Main Function
 --------------------------------------------------------------------------------
 
@@ -864,6 +928,18 @@ properties =
     , ("prop_multiline_plain_url", prop_multiline_plain_url)
     , ("prop_multiline_plain_then_sibling", prop_multiline_plain_then_sibling)
     , ("prop_multiline_plain_deep_indent", prop_multiline_plain_deep_indent)
+    , ("prop_tag_str_number", prop_tag_str_number)
+    , ("prop_tag_str_bool", prop_tag_str_bool)
+    , ("prop_tag_int_string", prop_tag_int_string)
+    , ("prop_tag_int_float", prop_tag_int_float)
+    , ("prop_tag_float_int", prop_tag_float_int)
+    , ("prop_tag_bool_string", prop_tag_bool_string)
+    , ("prop_tag_null", prop_tag_null)
+    , ("prop_tag_local", prop_tag_local)
+    , ("prop_tag_on_seq", prop_tag_on_seq)
+    , ("prop_tag_on_map", prop_tag_on_map)
+    , ("prop_tag_verbatim", prop_tag_verbatim)
+    , ("prop_tag_in_flow", prop_tag_in_flow)
     ]
 
 main : IO ()

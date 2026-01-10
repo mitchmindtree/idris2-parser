@@ -19,6 +19,96 @@ Rule b t =
   -> Res b YAMLToken xs YAMLParseError t
 
 --------------------------------------------------------------------------------
+--          Tag Application
+--------------------------------------------------------------------------------
+
+||| Convert a YAMLValue to its string representation for !!str coercion
+valueToString : YAMLValue -> String
+valueToString YNull = "null"
+valueToString (YBool True) = "true"
+valueToString (YBool False) = "false"
+valueToString (YInt i) = show i
+valueToString (YFloat d) = show d
+valueToString (YStr s) = s
+valueToString (YSeq _) = ""  -- Can't meaningfully convert
+valueToString (YMap _) = ""  -- Can't meaningfully convert
+valueToString (YTime t) = interpolate t
+
+||| Try to parse a string as a boolean
+parseBoolFromString : String -> Maybe Bool
+parseBoolFromString "true" = Just True
+parseBoolFromString "True" = Just True
+parseBoolFromString "TRUE" = Just True
+parseBoolFromString "false" = Just False
+parseBoolFromString "False" = Just False
+parseBoolFromString "FALSE" = Just False
+parseBoolFromString _ = Nothing
+
+||| Force value to string
+tagToStr : YAMLValue -> YAMLValue
+tagToStr v = YStr (valueToString v)
+
+||| Try to parse a string as an integer (reusing Lexer's tryNumber)
+tryParseInt : String -> Maybe Integer
+tryParseInt s = case tryYamlInteger s of
+  Just i  => Just i
+  Nothing => case tryNumber s of
+    Just (YInt i) => Just i
+    _             => Nothing
+
+||| Try to parse a string as a float (reusing Lexer's tryNumber)
+tryParseFloat : String -> Maybe Double
+tryParseFloat s = case tryNumber s of
+  Just (YFloat d) => Just d
+  Just (YInt i)   => Just (cast i)
+  _               => Nothing
+
+||| Force value to integer
+tagToInt : YAMLValue -> YAMLValue
+tagToInt (YStr s) = maybe (YStr s) YInt (tryParseInt s)
+tagToInt (YInt i) = YInt i
+tagToInt (YFloat d) = YInt (cast d)
+tagToInt v = v
+
+||| Force value to float
+tagToFloat : YAMLValue -> YAMLValue
+tagToFloat (YStr s) = maybe (YStr s) YFloat (tryParseFloat s)
+tagToFloat (YInt i) = YFloat (cast i)
+tagToFloat (YFloat d) = YFloat d
+tagToFloat v = v
+
+||| Force value to boolean
+tagToBool : YAMLValue -> YAMLValue
+tagToBool (YStr s) = maybe (YStr s) YBool (parseBoolFromString s)
+tagToBool (YBool b) = YBool b
+tagToBool v = v
+
+||| Normalize a tag to its canonical short name
+||| Handles: "!str" -> "str", "tag:yaml.org,2002:str" -> "str", "str" -> "str"
+normalizeTag : String -> String
+normalizeTag s =
+  let yamlPrefix = "tag:yaml.org,2002:"
+      prefixLen  = length yamlPrefix
+   in if isPrefixOf (unpack yamlPrefix) (unpack s)
+        then substr prefixLen (length s `minus` prefixLen) s
+        else case unpack s of
+          '!' :: rest => pack rest
+          _           => s
+
+||| Apply a core schema tag to a value
+||| Returns the coerced value, or the original if coercion not applicable
+applyTag : String -> YAMLValue -> YAMLValue
+applyTag tag v = case normalizeTag tag of
+  "str"   => tagToStr v
+  "int"   => tagToInt v
+  "float" => tagToFloat v
+  "bool"  => tagToBool v
+  "null"  => YNull
+  "seq"   => v  -- Structure already determined
+  "map"   => v  -- Structure already determined
+  _       => v  -- Unknown tag - keep as-is
+
+--------------------------------------------------------------------------------
 --          Flow Collection Parsers
 --------------------------------------------------------------------------------
 
@@ -146,6 +236,11 @@ mutual
       Fail0 err => Fail0 err
 
   value : Rule True YAMLValue
+  -- Tagged value: parse the tag, then the value, and apply the tag
+  value (B (TTag tag) _ :: xs) (SA r) =
+    case succT $ value xs r of
+      Succ0 v ys => Succ0 (applyTag tag v) ys
+      Fail0 err => Fail0 err
   -- Block sequence: parse first dash, then delegate to blockSeqItems
   value (B TDash _ :: xs) (SA r) = succT $ blockSeqItems [<] xs r
   -- Block mapping: scalar followed by colon, delegate to blockMapAfterColon
