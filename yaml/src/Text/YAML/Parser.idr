@@ -372,6 +372,18 @@ mutual
   value m xs _ = fail xs
 
   flowSeq b sv m xs acc@(SA r) = case value m xs acc of
+    -- Implicit key: value followed by colon becomes single-pair map
+    Succ0 (m', k) (B TColon _ :: ys) =>
+      case succT $ value m' ys r of
+        Succ0 (m'', v) (B TComma _ :: zs)    =>
+          succT $ flowSeq b (sv :< YMap [(k, v)]) m'' zs r
+        Succ0 (m'', v) (B TRBracket _ :: zs) =>
+          Succ0 (m'', YSeq $ sv <>> [YMap [(k, v)]]) zs
+        Succ0 _ (B TEOI _ :: _)              => unclosed b TLBracket
+        Succ0 _ (z :: _)                     => unexpected z
+        Succ0 _ []                           => unclosed b TLBracket
+        Fail0 err                            => Fail0 err
+    -- Regular sequence elements
     Succ0 (m', v) (B TComma _ :: ys)    => succT $ flowSeq b (sv :< v) m' ys r
     Succ0 (m', v) (B TRBracket _ :: ys) => Succ0 (m', YSeq $ sv <>> [v]) ys
     Succ0 _ (B TEOI _ :: _)             => unclosed b TLBracket

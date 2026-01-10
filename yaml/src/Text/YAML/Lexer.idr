@@ -152,6 +152,20 @@ isPlainEndFlow '{'  = True
 isPlainEndFlow '}'  = True
 isPlainEndFlow c    = isPlainEndBlock c
 
+||| Characters that make ':' a mapping indicator when they follow it
+||| In flow context, ':' is only an indicator when followed by whitespace or flow indicator
+isMappingIndicatorNext : Char -> Bool
+isMappingIndicatorNext ' '  = True
+isMappingIndicatorNext '\t' = True
+isMappingIndicatorNext '\n' = True
+isMappingIndicatorNext '\r' = True
+isMappingIndicatorNext ','  = True
+isMappingIndicatorNext '['  = True
+isMappingIndicatorNext ']'  = True
+isMappingIndicatorNext '{'  = True
+isMappingIndicatorNext '}'  = True
+isMappingIndicatorNext _    = False
+
 ||| Count leading spaces and return count with remaining chars (single pass)
 countAndSkipSpaces : Nat -> List Char -> (Nat, List Char)
 countAndSkipSpaces n (' ' :: xs) = countAndSkipSpaces (S n) xs
@@ -240,9 +254,13 @@ mutual
   plainScalarBlockMulti bi sc [] = Succ (cast $ rtrimLine sc) []
 
 ||| Read a plain (unquoted) scalar in flow context
-||| In flow context, : always ends the scalar (mapping indicator)
+||| In flow context, : ends the scalar only when followed by whitespace or flow indicator
 plainScalarFlow : SnocList Char -> AutoTok e String
-plainScalarFlow sc (':' :: xs) = Succ (cast $ rtrimLine sc) (':' :: xs)
+plainScalarFlow sc (':' :: x :: xs) =
+  if isMappingIndicatorNext x
+    then Succ (cast $ rtrimLine sc) (':' :: x :: xs)
+    else plainScalarFlow (sc :< ':') (x :: xs)
+plainScalarFlow sc (':' :: []) = Succ (cast $ rtrimLine sc) (':' :: [])
 plainScalarFlow sc (c :: xs) =
   if isPlainEndFlow c
     then Succ (cast $ rtrimLine sc) (c :: xs)
@@ -621,7 +639,11 @@ blockTok bi []                       = eoiAt Same
 ||| Lex a single token in flow context
 flowTok : Tok True e YAMLToken
 flowTok (',' :: xs)  = Succ TComma xs
-flowTok (':' :: xs)  = Succ TColon xs
+flowTok (':' :: x :: xs) =
+  if isMappingIndicatorNext x
+    then Succ TColon (x :: xs)
+    else TScalar . interpretScalar <$> plainScalarFlow [< ':'] (x :: xs)
+flowTok (':' :: [])  = Succ TColon []
 flowTok ('?' :: xs)  = Succ TQuestion xs
 flowTok ('[' :: xs)  = Succ TLBracket xs
 flowTok (']' :: xs)  = Succ TRBracket xs

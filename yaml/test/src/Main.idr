@@ -93,6 +93,29 @@ prop_float_simple = parseOk "3.14" (YFloat 3.14)
 prop_float_exp : Property
 prop_float_exp = parseOk "1e10" (YFloat 1.0e10)
 
+prop_float_inf : Property
+prop_float_inf = parseOk ".inf" (YFloat (1.0 / 0.0))
+
+prop_float_neg_inf : Property
+prop_float_neg_inf = parseOk "-.inf" (YFloat (negate $ 1.0 / 0.0))
+
+prop_float_plus_inf : Property
+prop_float_plus_inf = parseOk "+.inf" (YFloat (1.0 / 0.0))
+
+-- NaN requires special handling since NaN != NaN (x /= x only for NaN)
+prop_float_nan : Property
+prop_float_nan = property1 $ case parseYAML Virtual ".nan" of
+  Right [< YFloat x] => (x /= x) === True
+  other => annotate ("Expected NaN but got: " ++ show other) >> failure
+
+prop_float_Inf : Property
+prop_float_Inf = parseOk ".Inf" (YFloat (1.0 / 0.0))
+
+prop_float_NaN : Property
+prop_float_NaN = property1 $ case parseYAML Virtual ".NaN" of
+  Right [< YFloat x] => (x /= x) === True
+  other => annotate ("Expected NaN but got: " ++ show other) >> failure
+
 --------------------------------------------------------------------------------
 --          Timestamp Tests
 --------------------------------------------------------------------------------
@@ -1191,6 +1214,40 @@ prop_anchor_empty_seq = parseOk
          (YStr "copy", YSeq [])])
 
 --------------------------------------------------------------------------------
+--          Implicit Flow Key Tests
+--------------------------------------------------------------------------------
+
+-- Simple implicit key in flow sequence
+prop_implicit_key_simple : Property
+prop_implicit_key_simple = parseOk "[name: alice]"
+  (YSeq [YMap [(YStr "name", YStr "alice")]])
+
+-- Multiple implicit keys
+prop_implicit_key_multiple : Property
+prop_implicit_key_multiple = parseOk "[a: 1, b: 2]"
+  (YSeq [YMap [(YStr "a", YInt 1)], YMap [(YStr "b", YInt 2)]])
+
+-- Mixed: plain values and implicit keys
+prop_implicit_key_mixed : Property
+prop_implicit_key_mixed = parseOk "[plain, key: value, 42]"
+  (YSeq [YStr "plain", YMap [(YStr "key", YStr "value")], YInt 42])
+
+-- Implicit key with nested flow value
+prop_implicit_key_nested : Property
+prop_implicit_key_nested = parseOk "[items: [1, 2]]"
+  (YSeq [YMap [(YStr "items", YSeq [YInt 1, YInt 2])]])
+
+-- Colon in key (no space after internal colons)
+prop_implicit_key_colon_in_key : Property
+prop_implicit_key_colon_in_key = parseOk "[key:foo: bar]"
+  (YSeq [YMap [(YStr "key:foo", YStr "bar")]])
+
+-- Plain scalar with colons (no space after any colon)
+prop_implicit_key_colon_no_space : Property
+prop_implicit_key_colon_no_space = parseOk "[foo:bar:baz]"
+  (YSeq [YStr "foo:bar:baz"])
+
+--------------------------------------------------------------------------------
 --          Merge Key Tests
 --------------------------------------------------------------------------------
 
@@ -1304,6 +1361,12 @@ properties =
     , ("prop_int_octal", prop_int_octal)
     , ("prop_float_simple", prop_float_simple)
     , ("prop_float_exp", prop_float_exp)
+    , ("prop_float_inf", prop_float_inf)
+    , ("prop_float_neg_inf", prop_float_neg_inf)
+    , ("prop_float_plus_inf", prop_float_plus_inf)
+    , ("prop_float_nan", prop_float_nan)
+    , ("prop_float_Inf", prop_float_Inf)
+    , ("prop_float_NaN", prop_float_NaN)
     , ("prop_time_date", prop_time_date)
     , ("prop_time_datetime", prop_time_datetime)
     , ("prop_time_datetime_lower", prop_time_datetime_lower)
@@ -1450,6 +1513,12 @@ properties =
     , ("prop_anchor_seq_to_map", prop_anchor_seq_to_map)
     , ("prop_anchor_empty_map", prop_anchor_empty_map)
     , ("prop_anchor_empty_seq", prop_anchor_empty_seq)
+    , ("prop_implicit_key_simple", prop_implicit_key_simple)
+    , ("prop_implicit_key_multiple", prop_implicit_key_multiple)
+    , ("prop_implicit_key_mixed", prop_implicit_key_mixed)
+    , ("prop_implicit_key_nested", prop_implicit_key_nested)
+    , ("prop_implicit_key_colon_in_key", prop_implicit_key_colon_in_key)
+    , ("prop_implicit_key_colon_no_space", prop_implicit_key_colon_no_space)
     , ("prop_merge_simple", prop_merge_simple)
     , ("prop_merge_with_override", prop_merge_with_override)
     , ("prop_merge_sequence", prop_merge_sequence)
