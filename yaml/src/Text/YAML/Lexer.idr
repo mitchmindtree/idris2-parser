@@ -46,14 +46,62 @@ allHex = all isHexDigit
 hexChar : List Char -> Char
 hexChar = cast . foldl (\acc, c => acc * 16 + hexDigit c) 0
 
+-- Placeholder for escaped newline (won't be folded)
+escapedNL : Char
+escapedNL = '\x01'
+
+-- Placeholder for escaped carriage return
+escapedCR : Char
+escapedCR = '\x02'
+
+isEscapedNLCR : Char -> Bool
+isEscapedNLCR c = c == escapedNL || c == escapedCR
+
+||| Apply line folding to a double-quoted string
+||| Rules: single linebreak → space, empty lines → \n, trim leading whitespace on continuation
+||| Escaped newlines (marked with placeholder) are preserved.
+foldQuotedLines : String -> String
+foldQuotedLines s = pack $ restore $ go False False (unpack s)
+  where
+    -- Restore placeholders back to actual characters
+    restore : List Char -> List Char
+    restore [] = []
+    restore (c :: cs) =
+      if c == escapedNL then '\n' :: restore cs
+      else if c == escapedCR then '\r' :: restore cs
+      else c :: restore cs
+
+    -- go inFold sawBlank chars
+    -- inFold: we just saw a newline and are in folding mode
+    -- sawBlank: we saw an empty line (should produce \n)
+    go : Bool -> Bool -> List Char -> List Char
+    go False _ [] = []
+    go True sawBlank [] = if sawBlank then ['\n'] else [' ']
+    -- Start of fold: skip source newline
+    go False _ ('\n' :: xs) = go True False xs
+    go False _ ('\r' :: '\n' :: xs) = go True False xs
+    go False _ ('\r' :: xs) = go True False xs
+    -- In fold: skip whitespace, detect blank lines
+    go True sawBlank ('\n' :: xs) = go True True xs  -- blank line
+    go True sawBlank ('\r' :: '\n' :: xs) = go True True xs
+    go True sawBlank ('\r' :: xs) = go True True xs
+    go True sawBlank (' ' :: xs) = go True sawBlank xs  -- skip leading space
+    go True sawBlank ('\t' :: xs) = go True sawBlank xs -- skip leading tab
+    -- End of fold: emit space or newline, then continue
+    go True sawBlank (x :: xs) =
+      if sawBlank then '\n' :: x :: go False False xs
+                  else ' ' :: x :: go False False xs
+    -- Normal char (including escaped newline placeholders)
+    go False _ (x :: xs) = x :: go False False xs
+
 ||| Read a double-quoted string with escape sequences
 dqString : SnocList Char -> AutoTok e String
 dqString sc ('\\' :: esc :: xs) = case esc of
   '"'  => dqString (sc :< '"') xs
   '\\' => dqString (sc :< '\\') xs
   '/'  => dqString (sc :< '/') xs
-  'n'  => dqString (sc :< '\n') xs
-  'r'  => dqString (sc :< '\r') xs
+  'n'  => dqString (sc :< escapedNL) xs  -- Use placeholder, restored after folding
+  'r'  => dqString (sc :< escapedCR) xs  -- Use placeholder, restored after folding
   't'  => dqString (sc :< '\t') xs
   'b'  => dqString (sc :< '\b') xs
   'f'  => dqString (sc :< '\f') xs
@@ -85,9 +133,9 @@ dqString sc ('\\' :: esc :: xs) = case esc of
         else invalidEscape p t
     _ => invalidEscape p xs
   _    => invalidEscape p xs
-dqString sc ('"' :: xs) = Succ (cast sc) xs
+dqString sc ('"' :: xs) = Succ (foldQuotedLines (cast sc)) xs
 dqString sc (c :: xs)   =
-  if yamlControl c && c /= '\t'
+  if yamlControl c && c /= '\t' && c /= '\n' && c /= '\r'
     then range (InvalidControl c) p xs
     else dqString (sc :< c) xs
 dqString sc []          = eoiAt p

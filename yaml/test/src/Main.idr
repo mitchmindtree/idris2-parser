@@ -191,6 +191,19 @@ prop_string_escape_para_sep = parseOk "\"\\P\"" (YStr "\x2029")
 prop_string_escape_unicode32 : Property
 prop_string_escape_unicode32 = parseOk "\"\\U0001F600\"" (YStr "\x1F600")
 
+-- Multiline double-quoted strings with line folding
+prop_dq_multiline_fold : Property
+prop_dq_multiline_fold = parseOk "\"hello\n world\"" (YStr "hello world")
+
+prop_dq_multiline_blank_line : Property
+prop_dq_multiline_blank_line = parseOk "\"hello\n\n world\"" (YStr "hello\nworld")
+
+prop_dq_multiline_trim_indent : Property
+prop_dq_multiline_trim_indent = parseOk "\"hello\n    world\"" (YStr "hello world")
+
+prop_dq_multiline_with_escaped : Property
+prop_dq_multiline_with_escaped = parseOk "\"line1\\nline2\n line3\"" (YStr "line1\nline2 line3")
+
 --------------------------------------------------------------------------------
 --          Flow Sequence Tests
 --------------------------------------------------------------------------------
@@ -1386,6 +1399,10 @@ properties =
     , ("prop_string_escape_line_sep", prop_string_escape_line_sep)
     , ("prop_string_escape_para_sep", prop_string_escape_para_sep)
     , ("prop_string_escape_unicode32", prop_string_escape_unicode32)
+    , ("prop_dq_multiline_fold", prop_dq_multiline_fold)
+    , ("prop_dq_multiline_blank_line", prop_dq_multiline_blank_line)
+    , ("prop_dq_multiline_trim_indent", prop_dq_multiline_trim_indent)
+    , ("prop_dq_multiline_with_escaped", prop_dq_multiline_with_escaped)
     , ("prop_seq_empty", prop_seq_empty)
     , ("prop_seq_single", prop_seq_single)
     , ("prop_seq_multiple", prop_seq_multiple)
