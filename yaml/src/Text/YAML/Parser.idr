@@ -265,6 +265,13 @@ mutual
             succT $ blockMapAfterColon k2 (sv :< (k, v)) m'' rest r
           Succ0 _ zs => fail zs
           Fail0 err => Fail0 err
+      -- After anchor+nested block: dedent followed by more keys at same level
+      -- Only continue if value was a compound type (map/seq) - scalar values don't create dedents
+      -- (e.g., "key: &anchor\n  nested\nsibling: val" - sibling is part of same map)
+      Succ0 (m', v@(YMap _)) (B TNewline _ :: B TDedent _ :: B (TScalar k2) _ :: B TColon _ :: ys) =>
+        succT $ blockMapAfterColon k2 (sv :< (k, v)) m' ys r
+      Succ0 (m', v@(YSeq _)) (B TNewline _ :: B TDedent _ :: B (TScalar k2) _ :: B TColon _ :: ys) =>
+        succT $ blockMapAfterColon k2 (sv :< (k, v)) m' ys r
       Succ0 (m', v) rest@(B TNewline _ :: B TDedent _ :: ys) =>
         -- End of this mapping level - leave TDedent for outer parser
         Succ0 (m', YMap $ sv <>> [(k, v)]) rest

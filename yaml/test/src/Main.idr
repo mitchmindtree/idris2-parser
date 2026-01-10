@@ -1042,6 +1042,154 @@ prop_anchor_nested = parseOk
   (YMap [(YStr "outer", YMap [(YStr "inner", YMap [(YStr "value", YInt 1)])]),
          (YStr "copy", YMap [(YStr "inner", YMap [(YStr "value", YInt 1)])])])
 
+-- Anchor on block-style nested map
+prop_anchor_block_nested : Property
+prop_anchor_block_nested = parseOk
+  """
+  defaults: &def
+    timeout: 30
+  ref: *def
+  """
+  (YMap [(YStr "defaults", YMap [(YStr "timeout", YInt 30)]),
+         (YStr "ref", YMap [(YStr "timeout", YInt 30)])])
+
+-- Anchor on block-style nested sequence
+prop_anchor_block_seq : Property
+prop_anchor_block_seq = parseOk
+  """
+  items: &list
+    - a
+    - b
+  copy: *list
+  """
+  (YMap [(YStr "items", YSeq [YStr "a", YStr "b"]),
+         (YStr "copy", YSeq [YStr "a", YStr "b"])])
+
+-- YAML 1.2 spec Example 2.10: Node for Sammy Sosa appears twice
+prop_spec_2_10 : Property
+prop_spec_2_10 = parseOk
+  """
+  hr:
+    - Mark McGwire
+    - &SS Sammy Sosa
+  rbi:
+    - *SS
+    - Ken Griffey
+  """
+  (YMap [(YStr "hr", YSeq [YStr "Mark McGwire", YStr "Sammy Sosa"]),
+         (YStr "rbi", YSeq [YStr "Sammy Sosa", YStr "Ken Griffey"])])
+
+-- YAML 1.2 spec Example 2.27 (simplified): Repeated billing info
+prop_spec_2_27 : Property
+prop_spec_2_27 = parseOk
+  """
+  bill-to: &id001
+    given: Chris
+    family: Dumars
+  ship-to: *id001
+  """
+  (YMap [(YStr "bill-to", YMap [(YStr "given", YStr "Chris"),
+                                 (YStr "family", YStr "Dumars")]),
+         (YStr "ship-to", YMap [(YStr "given", YStr "Chris"),
+                                 (YStr "family", YStr "Dumars")])])
+
+-- YAML 1.2 spec Example 6.29: Node Anchors
+prop_spec_6_29 : Property
+prop_spec_6_29 = parseOk
+  """
+  First occurrence: &anchor Value
+  Second occurrence: *anchor
+  """
+  (YMap [(YStr "First occurrence", YStr "Value"),
+         (YStr "Second occurrence", YStr "Value")])
+
+-- YAML 1.2 spec Example 7.1: Alias Nodes (anchor override)
+prop_spec_7_1 : Property
+prop_spec_7_1 = parseOk
+  """
+  First occurrence: &anchor Foo
+  Second occurrence: *anchor
+  Override anchor: &anchor Bar
+  Reuse anchor: *anchor
+  """
+  (YMap [(YStr "First occurrence", YStr "Foo"),
+         (YStr "Second occurrence", YStr "Foo"),
+         (YStr "Override anchor", YStr "Bar"),
+         (YStr "Reuse anchor", YStr "Bar")])
+
+-- Anchor in nested sequence item
+prop_anchor_in_nested_seq : Property
+prop_anchor_in_nested_seq = parseOk
+  """
+  - &first
+    - nested
+    - items
+  - *first
+  """
+  (YSeq [YSeq [YStr "nested", YStr "items"],
+         YSeq [YStr "nested", YStr "items"]])
+
+-- Multiple anchors at different nesting levels
+prop_anchor_multi_level : Property
+prop_anchor_multi_level = parseOk
+  """
+  outer: &outer
+    inner: &inner value
+    ref: *inner
+  copy: *outer
+  """
+  (YMap [(YStr "outer", YMap [(YStr "inner", YStr "value"),
+                               (YStr "ref", YStr "value")]),
+         (YStr "copy", YMap [(YStr "inner", YStr "value"),
+                              (YStr "ref", YStr "value")])])
+
+-- Anchor on deeply nested structure
+prop_anchor_deep_nested : Property
+prop_anchor_deep_nested = parseOk
+  """
+  root:
+    level1:
+      level2: &deep
+        level3: value
+      ref: *deep
+  """
+  (YMap [(YStr "root", YMap [(YStr "level1", YMap [
+    (YStr "level2", YMap [(YStr "level3", YStr "value")]),
+    (YStr "ref", YMap [(YStr "level3", YStr "value")])])])])
+
+-- Anchor in sequence, alias in sibling map
+prop_anchor_seq_to_map : Property
+prop_anchor_seq_to_map = parseOk
+  """
+  seq:
+    - &item one
+    - two
+  map:
+    first: *item
+  """
+  (YMap [(YStr "seq", YSeq [YStr "one", YStr "two"]),
+         (YStr "map", YMap [(YStr "first", YStr "one")])])
+
+-- Anchor on empty map
+prop_anchor_empty_map : Property
+prop_anchor_empty_map = parseOk
+  """
+  empty: &e {}
+  copy: *e
+  """
+  (YMap [(YStr "empty", YMap []),
+         (YStr "copy", YMap [])])
+
+-- Anchor on empty sequence
+prop_anchor_empty_seq : Property
+prop_anchor_empty_seq = parseOk
+  """
+  empty: &e []
+  copy: *e
+  """
+  (YMap [(YStr "empty", YSeq []),
+         (YStr "copy", YSeq [])])
+
 --------------------------------------------------------------------------------
 --          Main Function
 --------------------------------------------------------------------------------
@@ -1201,6 +1349,18 @@ properties =
     , ("prop_anchor_hyphen_name", prop_anchor_hyphen_name)
     , ("prop_anchor_unused", prop_anchor_unused)
     , ("prop_anchor_nested", prop_anchor_nested)
+    , ("prop_anchor_block_nested", prop_anchor_block_nested)
+    , ("prop_anchor_block_seq", prop_anchor_block_seq)
+    , ("prop_spec_2_10", prop_spec_2_10)
+    , ("prop_spec_2_27", prop_spec_2_27)
+    , ("prop_spec_6_29", prop_spec_6_29)
+    , ("prop_spec_7_1", prop_spec_7_1)
+    , ("prop_anchor_in_nested_seq", prop_anchor_in_nested_seq)
+    , ("prop_anchor_multi_level", prop_anchor_multi_level)
+    , ("prop_anchor_deep_nested", prop_anchor_deep_nested)
+    , ("prop_anchor_seq_to_map", prop_anchor_seq_to_map)
+    , ("prop_anchor_empty_map", prop_anchor_empty_map)
+    , ("prop_anchor_empty_seq", prop_anchor_empty_seq)
     ]
 
 main : IO ()
