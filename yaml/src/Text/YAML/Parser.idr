@@ -369,6 +369,8 @@ mutual
   value m (B TLBrace b :: xs) (SA r) = succT $ flowMap b empty m xs r
   value m xs _ = fail xs
 
+  -- Handle trailing comma: if first token is ], we're done
+  flowSeq b sv m (B TRBracket _ :: xs) _ = Succ0 (m, YSeq $ sv <>> []) xs
   flowSeq b sv m xs acc@(SA r) = case value m xs acc of
     -- Implicit key: value followed by colon becomes single-pair map
     Succ0 (m', k) (B TColon _ :: ys) =>
@@ -390,6 +392,8 @@ mutual
     Succ0 _ []                          => unclosed b TLBracket
     Fail0 err                           => Fail0 err
 
+  -- Handle trailing comma: if first token is }, we're done
+  flowMap b sv m (B TRBrace _ :: xs) _ = Succ0 (m, YMap $ toList sv) xs
   -- Complex key in flow mapping: {? key: value}
   flowMap b sv m (B TQuestion _ :: xs) (SA r) =
     case succT $ value m xs r of

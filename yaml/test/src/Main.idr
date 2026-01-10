@@ -223,6 +223,9 @@ prop_seq_mixed = parseOk "[1, true, \"hello\"]" (YSeq [YInt 1, YBool True, YStr 
 prop_seq_nested : Property
 prop_seq_nested = parseOk "[[1, 2], [3, 4]]" (YSeq [YSeq [YInt 1, YInt 2], YSeq [YInt 3, YInt 4]])
 
+prop_seq_trailing_comma : Property
+prop_seq_trailing_comma = parseOk "[1, 2, ]" (YSeq [YInt 1, YInt 2])
+
 --------------------------------------------------------------------------------
 --          Flow Mapping Tests
 --------------------------------------------------------------------------------
@@ -239,6 +242,9 @@ prop_map_multiple = parseOk "{a: 1, b: 2}" (YMap [(YStr "a", YInt 1), (YStr "b",
 prop_map_nested : Property
 prop_map_nested = parseOk "{outer: {inner: 42}}"
   (YMap [(YStr "outer", YMap [(YStr "inner", YInt 42)])])
+
+prop_map_trailing_comma : Property
+prop_map_trailing_comma = parseOk "{a: 1, b: 2, }" (YMap [(YStr "a", YInt 1), (YStr "b", YInt 2)])
 
 --------------------------------------------------------------------------------
 --          Block Sequence Tests
@@ -1408,10 +1414,12 @@ properties =
     , ("prop_seq_multiple", prop_seq_multiple)
     , ("prop_seq_mixed", prop_seq_mixed)
     , ("prop_seq_nested", prop_seq_nested)
+    , ("prop_seq_trailing_comma", prop_seq_trailing_comma)
     , ("prop_map_empty", prop_map_empty)
     , ("prop_map_single", prop_map_single)
     , ("prop_map_multiple", prop_map_multiple)
     , ("prop_map_nested", prop_map_nested)
+    , ("prop_map_trailing_comma", prop_map_trailing_comma)
     , ("prop_block_seq_single", prop_block_seq_single)
     , ("prop_block_seq_single_string", prop_block_seq_single_string)
     , ("prop_block_seq_two_items", prop_block_seq_two_items)
