@@ -925,6 +925,124 @@ prop_complex_key_mixed = parseOk
   (YMap [(YStr "simple", YStr "value"), (YSeq [YStr "complex"], YStr "other")])
 
 --------------------------------------------------------------------------------
+--          Anchor and Alias Tests
+--------------------------------------------------------------------------------
+
+-- Simple anchor and alias on scalar
+prop_anchor_simple : Property
+prop_anchor_simple = parseOk
+  """
+  anchor: &a 42
+  alias: *a
+  """
+  (YMap [(YStr "anchor", YInt 42), (YStr "alias", YInt 42)])
+
+-- Anchor on flow sequence (on same line)
+prop_anchor_seq : Property
+prop_anchor_seq = parseOk
+  """
+  list: &items [a, b]
+  copy: *items
+  """
+  (YMap [(YStr "list", YSeq [YStr "a", YStr "b"]),
+         (YStr "copy", YSeq [YStr "a", YStr "b"])])
+
+-- Anchor on flow mapping (on same line)
+prop_anchor_map : Property
+prop_anchor_map = parseOk
+  """
+  defaults: &def {x: 1}
+  config: *def
+  """
+  (YMap [(YStr "defaults", YMap [(YStr "x", YInt 1)]),
+         (YStr "config", YMap [(YStr "x", YInt 1)])])
+
+-- Multiple aliases to same anchor
+prop_anchor_multi_alias : Property
+prop_anchor_multi_alias = parseOk
+  """
+  - &val 100
+  - *val
+  - *val
+  """
+  (YSeq [YInt 100, YInt 100, YInt 100])
+
+-- Anchor reuse (later overwrites)
+prop_anchor_reuse : Property
+prop_anchor_reuse = parseOk
+  """
+  - &a 1
+  - *a
+  - &a 2
+  - *a
+  """
+  (YSeq [YInt 1, YInt 1, YInt 2, YInt 2])
+
+-- Anchor in flow context
+prop_anchor_flow : Property
+prop_anchor_flow = parseOk "{x: &a 1, y: *a}"
+  (YMap [(YStr "x", YInt 1), (YStr "y", YInt 1)])
+
+-- Anchor in flow sequence
+prop_anchor_flow_seq : Property
+prop_anchor_flow_seq = parseOk "[&a 1, *a, *a]"
+  (YSeq [YInt 1, YInt 1, YInt 1])
+
+-- Anchor with tag
+prop_anchor_with_tag : Property
+prop_anchor_with_tag = parseOk
+  """
+  val: &a !!str 123
+  ref: *a
+  """
+  (YMap [(YStr "val", YStr "123"), (YStr "ref", YStr "123")])
+
+-- Undefined alias (error)
+prop_alias_undefined : Property
+prop_alias_undefined = parseErr "*undefined"
+
+-- Alias before anchor (error)
+prop_alias_before_anchor : Property
+prop_alias_before_anchor = parseErr
+  """
+  ref: *later
+  val: &later 42
+  """
+
+-- Document scope (anchors reset at ---)
+prop_anchor_doc_scope : Property
+prop_anchor_doc_scope = parseErr
+  """
+  ---
+  val: &a 1
+  ---
+  ref: *a
+  """
+
+-- Anchor with hyphen in name
+prop_anchor_hyphen_name : Property
+prop_anchor_hyphen_name = parseOk
+  """
+  val: &my-anchor 42
+  ref: *my-anchor
+  """
+  (YMap [(YStr "val", YInt 42), (YStr "ref", YInt 42)])
+
+-- Unused anchor is valid
+prop_anchor_unused : Property
+prop_anchor_unused = parseOk "&unused 42" (YInt 42)
+
+-- Anchor on nested structure (using flow syntax)
+prop_anchor_nested : Property
+prop_anchor_nested = parseOk
+  """
+  outer: &ref {inner: {value: 1}}
+  copy: *ref
+  """
+  (YMap [(YStr "outer", YMap [(YStr "inner", YMap [(YStr "value", YInt 1)])]),
+         (YStr "copy", YMap [(YStr "inner", YMap [(YStr "value", YInt 1)])])])
+
+--------------------------------------------------------------------------------
 --          Main Function
 --------------------------------------------------------------------------------
 
@@ -1069,6 +1187,20 @@ properties =
     , ("prop_complex_key_in_flow", prop_complex_key_in_flow)
     , ("prop_complex_key_nested_map", prop_complex_key_nested_map)
     , ("prop_complex_key_mixed", prop_complex_key_mixed)
+    , ("prop_anchor_simple", prop_anchor_simple)
+    , ("prop_anchor_seq", prop_anchor_seq)
+    , ("prop_anchor_map", prop_anchor_map)
+    , ("prop_anchor_multi_alias", prop_anchor_multi_alias)
+    , ("prop_anchor_reuse", prop_anchor_reuse)
+    , ("prop_anchor_flow", prop_anchor_flow)
+    , ("prop_anchor_flow_seq", prop_anchor_flow_seq)
+    , ("prop_anchor_with_tag", prop_anchor_with_tag)
+    , ("prop_alias_undefined", prop_alias_undefined)
+    , ("prop_alias_before_anchor", prop_alias_before_anchor)
+    , ("prop_anchor_doc_scope", prop_anchor_doc_scope)
+    , ("prop_anchor_hyphen_name", prop_anchor_hyphen_name)
+    , ("prop_anchor_unused", prop_anchor_unused)
+    , ("prop_anchor_nested", prop_anchor_nested)
     ]
 
 main : IO ()

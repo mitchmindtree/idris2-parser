@@ -2,6 +2,7 @@ module Text.YAML.Parser
 
 import Data.List1
 import Data.SnocList
+import Data.SortedMap
 import public Text.Parse.Manual
 import Text.YAML.Lexer
 import Text.YAML.Types
@@ -12,11 +13,25 @@ import Text.YAML.Types
 --          Parser Types
 --------------------------------------------------------------------------------
 
+||| Map from anchor names to their resolved values
+public export
+0 AnchorMap : Type
+AnchorMap = SortedMap String YAMLValue
+
+||| Standard rule type (no anchor tracking)
 0 Rule : Bool -> Type -> Type
 Rule b t =
      (xs : List $ Bounded YAMLToken)
   -> (0 acc : SuffixAcc xs)
   -> Res b YAMLToken xs YAMLParseError t
+
+||| Anchor-aware rule type - threads anchor map and returns updated map with value
+0 RuleA : Bool -> Type -> Type
+RuleA b t =
+     AnchorMap
+  -> (xs : List $ Bounded YAMLToken)
+  -> (0 acc : SuffixAcc xs)
+  -> Res b YAMLToken xs YAMLParseError (AnchorMap, t)
 
 --------------------------------------------------------------------------------
 --          Tag Application
@@ -113,214 +128,233 @@ applyTag tag v = case normalizeTag tag of
 --------------------------------------------------------------------------------
 
 mutual
-  flowSeq : Bounds -> SnocList YAMLValue -> Rule True YAMLValue
+  flowSeq : Bounds -> SnocList YAMLValue -> RuleA True YAMLValue
 
-  flowMap : Bounds -> SnocList (YAMLValue, YAMLValue) -> Rule True YAMLValue
+  flowMap : Bounds -> SnocList (YAMLValue, YAMLValue) -> RuleA True YAMLValue
 
   -- Parse a nested block value (consumes TIndent, parses value, leaves TDedent for caller)
   -- Returns just the parsed value, caller handles continuation
-  blockNestedValue : Rule True YAMLValue
-  blockNestedValue (B TIndent _ :: xs) (SA r) = succT $ value xs r
-  blockNestedValue xs _ = fail xs
+  blockNestedValue : RuleA True YAMLValue
+  blockNestedValue m (B TIndent _ :: xs) (SA r) = succT $ value m xs r
+  blockNestedValue m xs _ = fail xs
 
   -- Handle continuation after parsing a nested value in block mapping
   -- Takes the result from blockNestedValue and continues parsing
   blockMapAfterNested :
        YAMLValue
     -> SnocList (YAMLValue, YAMLValue)
-    -> Res True YAMLToken xs YAMLParseError YAMLValue
+    -> Res True YAMLToken xs YAMLParseError (AnchorMap, YAMLValue)
     -> (0 acc : SuffixAcc xs)
-    -> Res True YAMLToken xs YAMLParseError YAMLValue
-  blockMapAfterNested k sv (Succ0 v (B TNewline _ :: B TDedent _ :: B (TScalar k2) _ :: B TColon _ :: ys)) (SA r) =
+    -> Res True YAMLToken xs YAMLParseError (AnchorMap, YAMLValue)
+  blockMapAfterNested k sv (Succ0 (m', v) (B TNewline _ :: B TDedent _ :: B (TScalar k2) _ :: B TColon _ :: ys)) (SA r) =
     -- After nested block, more pairs at parent level
-    succT $ blockMapAfterColon k2 (sv :< (k, v)) ys r
-  blockMapAfterNested k sv (Succ0 v rest@(B TNewline _ :: B TDedent _ :: ys)) _ =
+    succT $ blockMapAfterColon k2 (sv :< (k, v)) m' ys r
+  blockMapAfterNested k sv (Succ0 (m', v) rest@(B TNewline _ :: B TDedent _ :: ys)) _ =
     -- End of this mapping level
-    Succ0 (YMap $ sv <>> [(k, v)]) rest
-  blockMapAfterNested k sv (Succ0 v rest@(B TDedent _ :: ys)) _ =
+    Succ0 (m', YMap $ sv <>> [(k, v)]) rest
+  blockMapAfterNested k sv (Succ0 (m', v) rest@(B TDedent _ :: ys)) _ =
     -- End of this mapping level (no newline before dedent)
-    Succ0 (YMap $ sv <>> [(k, v)]) rest
-  blockMapAfterNested k sv (Succ0 v ys) _ =
+    Succ0 (m', YMap $ sv <>> [(k, v)]) rest
+  blockMapAfterNested k sv (Succ0 (m', v) ys) _ =
     -- End of document
-    Succ0 (YMap $ sv <>> [(k, v)]) ys
+    Succ0 (m', YMap $ sv <>> [(k, v)]) ys
   blockMapAfterNested k sv (Fail0 err) _ = Fail0 err
 
   -- Handle result after parsing nested value in block sequence
   blockSeqAfterNested :
        SnocList YAMLValue
-    -> Res True YAMLToken xs YAMLParseError YAMLValue
+    -> Res True YAMLToken xs YAMLParseError (AnchorMap, YAMLValue)
     -> (0 acc : SuffixAcc xs)
-    -> Res True YAMLToken xs YAMLParseError YAMLValue
-  blockSeqAfterNested sv (Succ0 v (B TNewline _ :: B TDedent _ :: B TDash _ :: ys)) (SA r) =
+    -> Res True YAMLToken xs YAMLParseError (AnchorMap, YAMLValue)
+  blockSeqAfterNested sv (Succ0 (m', v) (B TNewline _ :: B TDedent _ :: B TDash _ :: ys)) (SA r) =
     -- After nested block, more items at parent level
-    succT $ blockSeqItems (sv :< v) ys r
-  blockSeqAfterNested sv (Succ0 v rest@(B TNewline _ :: B TDedent _ :: ys)) _ =
+    succT $ blockSeqItems (sv :< v) m' ys r
+  blockSeqAfterNested sv (Succ0 (m', v) rest@(B TNewline _ :: B TDedent _ :: ys)) _ =
     -- End of this sequence level
-    Succ0 (YSeq $ sv <>> [v]) rest
-  blockSeqAfterNested sv (Succ0 v rest@(B TDedent _ :: ys)) _ =
+    Succ0 (m', YSeq $ sv <>> [v]) rest
+  blockSeqAfterNested sv (Succ0 (m', v) rest@(B TDedent _ :: ys)) _ =
     -- End without preceding newline
-    Succ0 (YSeq $ sv <>> [v]) rest
-  blockSeqAfterNested sv (Succ0 v ys) _ =
+    Succ0 (m', YSeq $ sv <>> [v]) rest
+  blockSeqAfterNested sv (Succ0 (m', v) ys) _ =
     -- End of document
-    Succ0 (YSeq $ sv <>> [v]) ys
+    Succ0 (m', YSeq $ sv <>> [v]) ys
   blockSeqAfterNested sv (Fail0 err) _ = Fail0 err
 
   -- Parse remaining items in a block sequence (after the first dash was consumed)
-  blockSeqItems : SnocList YAMLValue -> Rule True YAMLValue
+  blockSeqItems : SnocList YAMLValue -> RuleA True YAMLValue
   -- Content on next line after dash (handles: -\n  content)
-  blockSeqItems sv (B TNewline _ :: xs@(B TIndent _ :: _)) (SA r) =
-    succT $ blockSeqAfterNested sv (blockNestedValue xs r) r
+  blockSeqItems sv m (B TNewline _ :: xs@(B TIndent _ :: _)) (SA r) =
+    succT $ blockSeqAfterNested sv (blockNestedValue m xs r) r
   -- Parse value on same line
-  blockSeqItems sv xs acc@(SA r) = case value xs acc of
+  blockSeqItems sv m xs acc@(SA r) = case value m xs acc of
     -- Continue at same level
-    Succ0 v (B TNewline _ :: B TDash _ :: ys) =>
-      succT $ blockSeqItems (sv :< v) ys r
-    Succ0 v (B TDash _ :: ys) =>
-      succT $ blockSeqItems (sv :< v) ys r
+    Succ0 (m', v) (B TNewline _ :: B TDash _ :: ys) =>
+      succT $ blockSeqItems (sv :< v) m' ys r
+    Succ0 (m', v) (B TDash _ :: ys) =>
+      succT $ blockSeqItems (sv :< v) m' ys r
     -- Continue at nested level (handles: - - a\n  - b)
-    Succ0 v (B TNewline _ :: B TIndent _ :: B TDash _ :: ys) =>
-      succT $ blockSeqItems (sv :< v) ys r
+    Succ0 (m', v) (B TNewline _ :: B TIndent _ :: B TDash _ :: ys) =>
+      succT $ blockSeqItems (sv :< v) m' ys r
     -- Continue after nested structure exits (handles: - - a\n  - b\n- c)
     -- Only applies when v is a nested seq/map, not a scalar
-    Succ0 v@(YSeq _) (B TNewline _ :: B TDedent _ :: B TDash _ :: ys) =>
-      succT $ blockSeqItems (sv :< v) ys r
-    Succ0 v@(YMap _) (B TNewline _ :: B TDedent _ :: B TDash _ :: ys) =>
-      succT $ blockSeqItems (sv :< v) ys r
+    Succ0 (m', v@(YSeq _)) (B TNewline _ :: B TDedent _ :: B TDash _ :: ys) =>
+      succT $ blockSeqItems (sv :< v) m' ys r
+    Succ0 (m', v@(YMap _)) (B TNewline _ :: B TDedent _ :: B TDash _ :: ys) =>
+      succT $ blockSeqItems (sv :< v) m' ys r
     -- End at dedent - leave TDedent for outer parser to handle continuation
-    Succ0 v rest@(B TNewline _ :: B TDedent _ :: ys) =>
-      Succ0 (YSeq $ sv <>> [v]) rest
-    Succ0 v rest@(B TDedent _ :: ys) =>
-      Succ0 (YSeq $ sv <>> [v]) rest
+    Succ0 (m', v) rest@(B TNewline _ :: B TDedent _ :: ys) =>
+      Succ0 (m', YSeq $ sv <>> [v]) rest
+    Succ0 (m', v) rest@(B TDedent _ :: ys) =>
+      Succ0 (m', YSeq $ sv <>> [v]) rest
     -- End of sequence
-    Succ0 v ys =>
-      Succ0 (YSeq $ sv <>> [v]) ys
+    Succ0 (m', v) ys =>
+      Succ0 (m', YSeq $ sv <>> [v]) ys
     Fail0 err => Fail0 err
 
   -- Parse value after colon in block mapping, then check for more pairs
   -- k: the key we're parsing the value for
   -- sv: accumulated key-value pairs so far
-  blockMapAfterColon : YAMLValue -> SnocList (YAMLValue, YAMLValue) -> Rule True YAMLValue
+  blockMapAfterColon : YAMLValue -> SnocList (YAMLValue, YAMLValue) -> RuleA True YAMLValue
   -- Nested block: TNewline followed by TIndent starts nested content
   -- Use @ pattern to avoid consuming TIndent here, delegate to helper
-  blockMapAfterColon k sv (B TNewline _ :: xs@(B TIndent _ :: _)) (SA r) =
-    succT $ blockMapAfterNested k sv (blockNestedValue xs r) r
+  blockMapAfterColon k sv m (B TNewline _ :: xs@(B TIndent _ :: _)) (SA r) =
+    succT $ blockMapAfterNested k sv (blockNestedValue m xs r) r
   -- Same level: next key-value pair (value is null)
-  blockMapAfterColon k sv (B TNewline _ :: B (TScalar k2) _ :: B TColon _ :: xs) (SA r) =
-    succT $ blockMapAfterColon k2 (sv :< (k, YNull)) xs r
+  blockMapAfterColon k sv m (B TNewline _ :: B (TScalar k2) _ :: B TColon _ :: xs) (SA r) =
+    succT $ blockMapAfterColon k2 (sv :< (k, YNull)) m xs r
   -- Complex key follows (value is null for current key)
-  blockMapAfterColon k sv (B TNewline _ :: B TQuestion _ :: xs) (SA r) =
-    case succT $ value xs r of
-      Succ0 k2 (B TColon _ :: rest) =>
-        succT $ blockMapAfterColon k2 (sv :< (k, YNull)) rest r
-      Succ0 k2 (B TNewline _ :: B TColon _ :: rest) =>
-        succT $ blockMapAfterColon k2 (sv :< (k, YNull)) rest r
+  blockMapAfterColon k sv m (B TNewline _ :: B TQuestion _ :: xs) (SA r) =
+    case succT $ value m xs r of
+      Succ0 (m', k2) (B TColon _ :: rest) =>
+        succT $ blockMapAfterColon k2 (sv :< (k, YNull)) m' rest r
+      Succ0 (m', k2) (B TNewline _ :: B TColon _ :: rest) =>
+        succT $ blockMapAfterColon k2 (sv :< (k, YNull)) m' rest r
       Succ0 _ ys => fail ys
       Fail0 err => Fail0 err
   -- End of block: TDedent signals end of this mapping level
   -- Note: Don't consume TDedent - it may be needed by outer parser
-  blockMapAfterColon k sv (B TNewline _ :: ys@(B TDedent _ :: xs)) (SA r) =
-    Succ0 (YMap $ sv <>> [(k, YNull)]) ys
+  blockMapAfterColon k sv m (B TNewline _ :: ys@(B TDedent _ :: xs)) (SA r) =
+    Succ0 (m, YMap $ sv <>> [(k, YNull)]) ys
   -- End of mapping: just newline
-  blockMapAfterColon k sv (B TNewline _ :: xs) (SA r) =
-    Succ0 (YMap $ sv <>> [(k, YNull)]) xs
+  blockMapAfterColon k sv m (B TNewline _ :: xs) (SA r) =
+    Succ0 (m, YMap $ sv <>> [(k, YNull)]) xs
   -- Value on same line
-  blockMapAfterColon k sv xs acc@(SA r) =
-    case value xs acc of
-      Succ0 v (B TNewline _ :: B (TScalar k2) _ :: B TColon _ :: ys) =>
+  blockMapAfterColon k sv m xs acc@(SA r) =
+    case value m xs acc of
+      Succ0 (m', v) (B TNewline _ :: B (TScalar k2) _ :: B TColon _ :: ys) =>
         -- Another key-value pair follows at same level
-        succT $ blockMapAfterColon k2 (sv :< (k, v)) ys r
-      Succ0 v (B TNewline _ :: B TQuestion _ :: ys) =>
+        succT $ blockMapAfterColon k2 (sv :< (k, v)) m' ys r
+      Succ0 (m', v) (B TNewline _ :: B TQuestion _ :: ys) =>
         -- Complex key follows at same level
-        case succT $ value ys r of
-          Succ0 k2 (B TColon _ :: rest) =>
-            succT $ blockMapAfterColon k2 (sv :< (k, v)) rest r
-          Succ0 k2 (B TNewline _ :: B TColon _ :: rest) =>
-            succT $ blockMapAfterColon k2 (sv :< (k, v)) rest r
+        case succT $ value m' ys r of
+          Succ0 (m'', k2) (B TColon _ :: rest) =>
+            succT $ blockMapAfterColon k2 (sv :< (k, v)) m'' rest r
+          Succ0 (m'', k2) (B TNewline _ :: B TColon _ :: rest) =>
+            succT $ blockMapAfterColon k2 (sv :< (k, v)) m'' rest r
           Succ0 _ zs => fail zs
           Fail0 err => Fail0 err
-      Succ0 v (B TNewline _ :: B TIndent _ :: B (TScalar k2) _ :: B TColon _ :: ys) =>
+      Succ0 (m', v) (B TNewline _ :: B TIndent _ :: B (TScalar k2) _ :: B TColon _ :: ys) =>
         -- Another key-value pair at nested level (compact notation: - key: val\n  key2: val2)
-        succT $ blockMapAfterColon k2 (sv :< (k, v)) ys r
-      Succ0 v (B TNewline _ :: B TIndent _ :: B TQuestion _ :: ys) =>
+        succT $ blockMapAfterColon k2 (sv :< (k, v)) m' ys r
+      Succ0 (m', v) (B TNewline _ :: B TIndent _ :: B TQuestion _ :: ys) =>
         -- Complex key at nested level
-        case succT $ value ys r of
-          Succ0 k2 (B TColon _ :: rest) =>
-            succT $ blockMapAfterColon k2 (sv :< (k, v)) rest r
-          Succ0 k2 (B TNewline _ :: B TColon _ :: rest) =>
-            succT $ blockMapAfterColon k2 (sv :< (k, v)) rest r
+        case succT $ value m' ys r of
+          Succ0 (m'', k2) (B TColon _ :: rest) =>
+            succT $ blockMapAfterColon k2 (sv :< (k, v)) m'' rest r
+          Succ0 (m'', k2) (B TNewline _ :: B TColon _ :: rest) =>
+            succT $ blockMapAfterColon k2 (sv :< (k, v)) m'' rest r
           Succ0 _ zs => fail zs
           Fail0 err => Fail0 err
-      Succ0 v rest@(B TNewline _ :: B TDedent _ :: ys) =>
+      Succ0 (m', v) rest@(B TNewline _ :: B TDedent _ :: ys) =>
         -- End of this mapping level - leave TDedent for outer parser
-        Succ0 (YMap $ sv <>> [(k, v)]) rest
-      Succ0 v (B (TScalar k2) _ :: B TColon _ :: ys) =>
+        Succ0 (m', YMap $ sv <>> [(k, v)]) rest
+      Succ0 (m', v) (B (TScalar k2) _ :: B TColon _ :: ys) =>
         -- After block scalar: key follows directly without TNewline
         -- (block scalar consumed the newline internally)
-        succT $ blockMapAfterColon k2 (sv :< (k, v)) ys r
-      Succ0 v ys =>
+        succT $ blockMapAfterColon k2 (sv :< (k, v)) m' ys r
+      Succ0 (m', v) ys =>
         -- No more key-value pairs
-        Succ0 (YMap $ sv <>> [(k, v)]) ys
+        Succ0 (m', YMap $ sv <>> [(k, v)]) ys
       Fail0 err => Fail0 err
 
-  value : Rule True YAMLValue
+  value : RuleA True YAMLValue
+  -- Anchor: parse value, register in map, return both
+  value m (B (TAnchor name) _ :: xs) (SA r) =
+    case succT $ value m xs r of
+      Succ0 (m', v) ys => Succ0 (insert name v m', v) ys
+      Fail0 err => Fail0 err
+  -- Alias: lookup in map, error if not found
+  value m (B (TAlias name) b :: xs) _ =
+    case lookup name m of
+      Just v  => Succ0 (m, v) xs
+      Nothing => Fail0 (B (Custom (UndefinedAlias name)) b)
+  -- Nested block value (e.g., anchor before nested content: &ref\n  key: val)
+  value m (B TNewline _ :: xs@(B TIndent _ :: _)) (SA r) =
+    succT $ blockNestedValue m xs r
   -- Tagged value: parse the tag, then the value, and apply the tag
-  value (B (TTag tag) _ :: xs) (SA r) =
-    case succT $ value xs r of
-      Succ0 v ys => Succ0 (applyTag tag v) ys
+  value m (B (TTag tag) _ :: xs) (SA r) =
+    case succT $ value m xs r of
+      Succ0 (m', v) ys => Succ0 (m', applyTag tag v) ys
       Fail0 err => Fail0 err
   -- Block sequence: parse first dash, then delegate to blockSeqItems
-  value (B TDash _ :: xs) (SA r) = succT $ blockSeqItems [<] xs r
+  value m (B TDash _ :: xs) (SA r) = succT $ blockSeqItems [<] m xs r
   -- Complex key: ? key : value (allows any value type as key)
-  value (B TQuestion _ :: xs) (SA r) =
-    case succT $ value xs r of
+  value m (B TQuestion _ :: xs) (SA r) =
+    case succT $ value m xs r of
       -- Colon immediately after key
-      Succ0 k (B TColon _ :: rest) =>
-        succT $ blockMapAfterColon k [<] rest r
+      Succ0 (m', k) (B TColon _ :: rest) =>
+        succT $ blockMapAfterColon k [<] m' rest r
       -- Colon on next line after key
-      Succ0 k (B TNewline _ :: B TColon _ :: rest) =>
-        succT $ blockMapAfterColon k [<] rest r
+      Succ0 (m', k) (B TNewline _ :: B TColon _ :: rest) =>
+        succT $ blockMapAfterColon k [<] m' rest r
       -- Missing colon after complex key
       Succ0 _ ys => fail ys
       Fail0 err => Fail0 err
   -- Block mapping: scalar followed by colon, delegate to blockMapAfterColon
-  value (B (TScalar k) _ :: B TColon _ :: xs) (SA r) = succT $ blockMapAfterColon k [<] xs r
+  value m (B (TScalar k) _ :: B TColon _ :: xs) (SA r) = succT $ blockMapAfterColon k [<] m xs r
   -- Plain scalar value
-  value (B (TScalar v) _ :: xs) _ = Succ0 v xs
-  value (B TLBracket b :: B TRBracket _ :: xs) _ = Succ0 (YSeq []) xs
-  value (B TLBracket b :: xs) (SA r) = succT $ flowSeq b [<] xs r
-  value (B TLBrace b :: B TRBrace _ :: xs) _ = Succ0 (YMap []) xs
-  value (B TLBrace b :: xs) (SA r) = succT $ flowMap b [<] xs r
-  value xs _ = fail xs
+  value m (B (TScalar v) _ :: xs) _ = Succ0 (m, v) xs
+  value m (B TLBracket b :: B TRBracket _ :: xs) _ = Succ0 (m, YSeq []) xs
+  value m (B TLBracket b :: xs) (SA r) = succT $ flowSeq b [<] m xs r
+  value m (B TLBrace b :: B TRBrace _ :: xs) _ = Succ0 (m, YMap []) xs
+  value m (B TLBrace b :: xs) (SA r) = succT $ flowMap b [<] m xs r
+  value m xs _ = fail xs
 
-  flowSeq b sv xs acc@(SA r) = case value xs acc of
-    Succ0 v (B TComma _ :: ys)    => succT $ flowSeq b (sv :< v) ys r
-    Succ0 v (B TRBracket _ :: ys) => Succ0 (YSeq $ sv <>> [v]) ys
-    Succ0 v (B TEOI _ :: _)       => unclosed b TLBracket
-    res@(Fail0 (B (Expected [] "end of input") _)) => unclosed b TLBracket
-    res                           => failInParen b TLBracket res
+  flowSeq b sv m xs acc@(SA r) = case value m xs acc of
+    Succ0 (m', v) (B TComma _ :: ys)    => succT $ flowSeq b (sv :< v) m' ys r
+    Succ0 (m', v) (B TRBracket _ :: ys) => Succ0 (m', YSeq $ sv <>> [v]) ys
+    Succ0 _ (B TEOI _ :: _)             => unclosed b TLBracket
+    Fail0 (B (Expected [] "end of input") _) => unclosed b TLBracket
+    Succ0 _ (y :: ys)                   => unexpected y
+    Succ0 _ []                          => unclosed b TLBracket
+    Fail0 err                           => Fail0 err
 
   -- Complex key in flow mapping: {? key: value}
-  flowMap b sv (B TQuestion _ :: xs) (SA r) =
-    case succT $ value xs r of
-      Succ0 k (B TColon _ :: rest) =>
-        case succT $ value rest r of
-          Succ0 v (B TComma _ :: ys)  => succT $ flowMap b (sv :< (k, v)) ys r
-          Succ0 v (B TRBrace _ :: ys) => Succ0 (YMap $ sv <>> [(k, v)]) ys
-          Succ0 v (B TEOI _ :: _)     => unclosed b TLBrace
-          res@(Fail0 (B (Expected [] "end of input") _)) => unclosed b TLBrace
-          res                         => failInParen b TLBrace res
+  flowMap b sv m (B TQuestion _ :: xs) (SA r) =
+    case succT $ value m xs r of
+      Succ0 (m', k) (B TColon _ :: rest) =>
+        case succT $ value m' rest r of
+          Succ0 (m'', v) (B TComma _ :: ys)  => succT $ flowMap b (sv :< (k, v)) m'' ys r
+          Succ0 (m'', v) (B TRBrace _ :: ys) => Succ0 (m'', YMap $ sv <>> [(k, v)]) ys
+          Succ0 _ (B TEOI _ :: _)            => unclosed b TLBrace
+          Fail0 (B (Expected [] "end of input") _) => unclosed b TLBrace
+          Succ0 _ (y :: ys)                  => unexpected y
+          Succ0 _ []                         => unclosed b TLBrace
+          Fail0 err                          => Fail0 err
       Succ0 _ ys => fail ys  -- Missing colon after complex key
       Fail0 err => Fail0 err
-  flowMap b sv (B (TScalar k) _ :: B TColon _ :: xs) (SA r) =
-    case succT $ value xs r of
-      Succ0 v (B TComma _ :: ys)  => succT $ flowMap b (sv :< (k, v)) ys r
-      Succ0 v (B TRBrace _ :: ys) => Succ0 (YMap $ sv <>> [(k, v)]) ys
-      Succ0 v (B TEOI _ :: _)     => unclosed b TLBrace
-      res@(Fail0 (B (Expected [] "end of input") _)) => unclosed b TLBrace
-      res                         => failInParen b TLBrace res
-  flowMap b sv (B (TScalar _) _ :: x :: xs) _ = expected x.bounds "':'" "\{x.val}"
-  flowMap b sv (x :: xs) _ = expected x.bounds "key" "\{x.val}"
-  flowMap b sv [] _ = eoi
+  flowMap b sv m (B (TScalar k) _ :: B TColon _ :: xs) (SA r) =
+    case succT $ value m xs r of
+      Succ0 (m', v) (B TComma _ :: ys)  => succT $ flowMap b (sv :< (k, v)) m' ys r
+      Succ0 (m', v) (B TRBrace _ :: ys) => Succ0 (m', YMap $ sv <>> [(k, v)]) ys
+      Succ0 _ (B TEOI _ :: _)           => unclosed b TLBrace
+      Fail0 (B (Expected [] "end of input") _) => unclosed b TLBrace
+      Succ0 _ (y :: ys)                 => unexpected y
+      Succ0 _ []                        => unclosed b TLBrace
+      Fail0 err                         => Fail0 err
+  flowMap b sv m (B (TScalar _) _ :: x :: xs) _ = expected x.bounds "':'" "\{x.val}"
+  flowMap b sv m (x :: xs) _ = expected x.bounds "key" "\{x.val}"
+  flowMap b sv m [] _ = eoi
 
 --------------------------------------------------------------------------------
 --          Entry Point
@@ -348,12 +382,13 @@ parseYAML o str = case lexYAML str of
     go sx (B TDocEnd _ :: ts) (SA r) = go sx ts r
     go sx (B (TDirective _ _) _ :: ts) (SA r) = go sx ts r  -- Skip directives
     -- Parse a document value, then skip to next doc boundary
-    go sx ts (SA r) = case value ts (SA r) of
+    -- Each document starts with a fresh empty anchor map
+    go sx ts (SA r) = case value empty ts (SA r) of
       Fail0 err => Left (toParseError o str err)
-      Succ0 v [] => Right (sx :< v)
-      Succ0 v [B TEOI _] => Right (sx :< v)
-      Succ0 v (B TNewline _ :: ts2) => go (sx :< v) ts2 r
-      Succ0 v (B TDedent _ :: ts2) => go (sx :< v) ts2 r
-      Succ0 v (B TDocEnd _ :: ts2) => go (sx :< v) ts2 r
-      Succ0 v (B TDocStart _ :: ts2) => go (sx :< v) ts2 r
-      Succ0 v ts2 => go (sx :< v) ts2 r
+      Succ0 (_, v) [] => Right (sx :< v)
+      Succ0 (_, v) [B TEOI _] => Right (sx :< v)
+      Succ0 (_, v) (B TNewline _ :: ts2) => go (sx :< v) ts2 r
+      Succ0 (_, v) (B TDedent _ :: ts2) => go (sx :< v) ts2 r
+      Succ0 (_, v) (B TDocEnd _ :: ts2) => go (sx :< v) ts2 r
+      Succ0 (_, v) (B TDocStart _ :: ts2) => go (sx :< v) ts2 r
+      Succ0 (_, v) ts2 => go (sx :< v) ts2 r

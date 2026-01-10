@@ -523,6 +523,30 @@ lexTag ('!' :: xs) = TTag . ("!" ++) <$> tagChars [<] xs
 lexTag xs = TTag <$> tagChars [<] xs
 
 --------------------------------------------------------------------------------
+--          Anchors and Aliases
+--------------------------------------------------------------------------------
+
+||| Valid anchor name characters (non-space, not flow indicators)
+isAnchorChar : Char -> Bool
+isAnchorChar c = not (isSpace c) && not (elem c ['[', ']', '{', '}', ','])
+
+||| Lex anchor/alias name (one or more anchor chars)
+anchorName : SnocList Char -> AutoTok e String
+anchorName sc (c :: xs) =
+  if isAnchorChar c
+    then anchorName (sc :< c) xs
+    else Succ (cast sc) (c :: xs)
+anchorName sc [] = Succ (cast sc) []
+
+||| Lex an anchor token: &name
+lexAnchor : AutoTok e YAMLToken
+lexAnchor xs = TAnchor <$> anchorName [<] xs
+
+||| Lex an alias token: *name
+lexAlias : AutoTok e YAMLToken
+lexAlias xs = TAlias <$> anchorName [<] xs
+
+--------------------------------------------------------------------------------
 --          Directives
 --------------------------------------------------------------------------------
 
@@ -587,6 +611,8 @@ blockTok bi ('>' :: xs)              = TScalar . YStr <$> blockScalar True xs
 blockTok bi ('"' :: xs)              = TScalar . YStr <$> dqString [<] xs
 blockTok bi ('\'' :: xs)             = TScalar . YStr <$> sqString [<] xs
 blockTok bi ('!' :: xs)              = lexTag xs
+blockTok bi ('&' :: xs)              = lexAnchor xs
+blockTok bi ('*' :: xs)              = lexAlias xs
 blockTok bi ('\n' :: xs)             = Succ TNewline xs
 blockTok bi ('\r' :: '\n' :: xs)     = Succ TNewline xs
 blockTok bi (c :: xs)                = TScalar . interpretScalar <$> plainScalarBlockMulti bi [< c] xs
@@ -604,6 +630,8 @@ flowTok ('}' :: xs)  = Succ TRBrace xs
 flowTok ('"' :: xs)  = TScalar . YStr <$> dqString [<] xs
 flowTok ('\'' :: xs) = TScalar . YStr <$> sqString [<] xs
 flowTok ('!' :: xs)  = lexTag xs
+flowTok ('&' :: xs)  = lexAnchor xs
+flowTok ('*' :: xs)  = lexAlias xs
 flowTok (c :: xs)    = TScalar . interpretScalar <$> plainScalarFlow [< c] xs
 flowTok []           = eoiAt Same
 

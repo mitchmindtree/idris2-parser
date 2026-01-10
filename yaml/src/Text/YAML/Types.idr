@@ -99,6 +99,12 @@ data YAMLToken : Type where
   ||| Complex key indicator '?'
   TQuestion : YAMLToken
 
+  ||| Anchor definition '&name'
+  TAnchor : String -> YAMLToken
+
+  ||| Alias reference '*name'
+  TAlias : String -> YAMLToken
+
 %runElab derive "YAMLToken" [Eq, Show]
 
 export
@@ -128,6 +134,8 @@ Interpolation YAMLToken where
   interpolate (TTag t)    = "tag '!\{t}'"
   interpolate (TDirective n v) = "directive '%\{n} \{v}'"
   interpolate TQuestion   = "'?'"
+  interpolate (TAnchor n) = "anchor '&\{n}'"
+  interpolate (TAlias n)  = "alias '*\{n}'"
 
 --------------------------------------------------------------------------------
 --          Errors
@@ -151,6 +159,9 @@ data YAMLParseError : Type where
   ||| Expected a specific token
   ExpectedToken   : String -> YAMLParseError
 
+  ||| Alias references undefined anchor
+  UndefinedAlias  : String -> YAMLParseError
+
 %runElab derive "YAMLParseError" [Eq, Show]
 
 export
@@ -165,6 +176,8 @@ Interpolation YAMLParseError where
     "Invalid escape sequence: '\\{pack [c]}'"
   interpolate (ExpectedToken t) =
     "Expected \{t}"
+  interpolate (UndefinedAlias n) =
+    "Undefined alias '*\{n}'"
 
 ||| Error type for lexing and parsing YAML files
 public export
