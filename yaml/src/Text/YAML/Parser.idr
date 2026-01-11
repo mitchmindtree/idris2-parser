@@ -423,18 +423,37 @@ mutual
 
   -- Handle trailing comma: if first token is }, we're done
   flowMap b sv m (B TRBrace _ :: xs) _ = Succ0 (m, YMap $ toList sv) xs
+  -- Complex key with plain scalar: {? foo: value} or {? foo :,}
+  -- Must handle this before general complex key to prevent value from starting block map
+  flowMap b sv m (B TQuestion _ :: B (TScalar k) _ :: B TColon _ :: rest) (SA r) =
+    case rest of
+      -- Null value: { ? foo :, } or { ? foo : }
+      (B TComma _ :: ys)  => succT $ flowMap b (addOrMerge k YNull sv) m ys r
+      (B TRBrace _ :: ys) => Succ0 (m, YMap $ toList (addOrMerge k YNull sv)) ys
+      _ => case succT $ value m rest r of
+        Succ0 (m', v) (B TComma _ :: ys)  => succT $ flowMap b (addOrMerge k v sv) m' ys r
+        Succ0 (m', v) (B TRBrace _ :: ys) => Succ0 (m', YMap $ toList (addOrMerge k v sv)) ys
+        Succ0 _ (B TEOI _ :: _)           => unclosed b TLBrace
+        Fail0 (B (Expected [] "end of input") _) => unclosed b TLBrace
+        Succ0 _ (y :: ys)                 => unexpected y
+        Succ0 _ []                        => unclosed b TLBrace
+        Fail0 err                         => Fail0 err
   -- Complex key in flow mapping: {? key: value}
   flowMap b sv m (B TQuestion _ :: xs) (SA r) =
     case succT $ value m xs r of
       Succ0 (m', k) (B TColon _ :: rest) =>
-        case succT $ value m' rest r of
-          Succ0 (m'', v) (B TComma _ :: ys)  => succT $ flowMap b (addOrMerge k v sv) m'' ys r
-          Succ0 (m'', v) (B TRBrace _ :: ys) => Succ0 (m'', YMap $ toList (addOrMerge k v sv)) ys
-          Succ0 _ (B TEOI _ :: _)            => unclosed b TLBrace
-          Fail0 (B (Expected [] "end of input") _) => unclosed b TLBrace
-          Succ0 _ (y :: ys)                  => unexpected y
-          Succ0 _ []                         => unclosed b TLBrace
-          Fail0 err                          => Fail0 err
+        case rest of
+          -- Null value after complex key: { ? foo :, }
+          (B TComma _ :: ys)  => succT $ flowMap b (addOrMerge k YNull sv) m' ys r
+          (B TRBrace _ :: ys) => Succ0 (m', YMap $ toList (addOrMerge k YNull sv)) ys
+          _ => case succT $ value m' rest r of
+            Succ0 (m'', v) (B TComma _ :: ys)  => succT $ flowMap b (addOrMerge k v sv) m'' ys r
+            Succ0 (m'', v) (B TRBrace _ :: ys) => Succ0 (m'', YMap $ toList (addOrMerge k v sv)) ys
+            Succ0 _ (B TEOI _ :: _)            => unclosed b TLBrace
+            Fail0 (B (Expected [] "end of input") _) => unclosed b TLBrace
+            Succ0 _ (y :: ys)                  => unexpected y
+            Succ0 _ []                         => unclosed b TLBrace
+            Fail0 err                          => Fail0 err
       Succ0 _ ys => fail ys  -- Missing colon after complex key
       Fail0 err => Fail0 err
   -- Null key with null value: { :, } or { : }
