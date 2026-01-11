@@ -20,23 +20,39 @@ runTest testId content = do
     Left err => pure (testId, False, "Parse error: \{show err}")
     Right docs => pure (testId, True, show (docs <>> []))
 
+-- Result of processing a test: Success, Failure, or Skipped (empty test dir)
+data TestResult = Pass String | Fail String String | Skip String
+
+isPass : TestResult -> Bool
+isPass (Pass _) = True
+isPass _ = False
+
+isFail : TestResult -> Bool
+isFail (Fail _ _) = True
+isFail _ = False
+
 -- Process a single test directory
-processTest : String -> String -> IO (String, Bool, String)
+processTest : String -> String -> IO TestResult
 processTest baseDir testId = do
   let inFile = baseDir ++ "/" ++ testId ++ "/in.yaml"
   let errorFile = baseDir ++ "/" ++ testId ++ "/error"
-  hasError <- fileExists errorFile
-  Right content <- readFile inFile
-    | Left err => pure (testId, False, "Cannot read: \{show err}")
-  case parseYAML Virtual content of
-    Left err =>
-      if hasError
-        then pure (testId, True, "Expected error, got error")
-        else pure (testId, False, "Unexpected parse error: \{show err}")
-    Right docs =>
-      if hasError
-        then pure (testId, False, "Expected error but parsed successfully: \{show (docs <>> [])}")
-        else pure (testId, True, show (docs <>> []))
+  -- First check if in.yaml exists (skip empty test directories)
+  hasInput <- fileExists inFile
+  if not hasInput
+    then pure (Skip testId)
+    else do
+      hasError <- fileExists errorFile
+      Right content <- readFile inFile
+        | Left err => pure (Fail testId "Cannot read: \{show err}")
+      case parseYAML Virtual content of
+        Left err =>
+          if hasError
+            then pure (Pass testId)
+            else pure (Fail testId "Unexpected parse error: \{show err}")
+        Right docs =>
+          if hasError
+            then pure (Fail testId "Expected error but parsed successfully: \{show (docs <>> [])}")
+            else pure (Pass testId)
 
 -- List directories (test IDs)
 listTests : String -> IO (List String)
@@ -65,11 +81,15 @@ main = do
       tests <- listTests baseDir
       putStrLn "Found \{show (length tests)} tests"
       results <- for tests $ \testId => processTest baseDir testId
-      let passed = filter (\(_, ok, _) => ok) results
-      let failed = filter (\(_, ok, _) => not ok) results
+      let passed = filter isPass results
+      let failed = filter isFail results
+      let skipped = length results `minus` (length passed + length failed)
       putStrLn "\n=== RESULTS ==="
-      putStrLn "Passed: \{show (length passed)} / \{show (length results)}"
+      putStrLn "Passed: \{show (length passed)} / \{show (length passed + length failed)}"
+      when (skipped > 0) $ putStrLn "Skipped: \{show skipped} (empty test directories)"
       putStrLn "\n=== FAILURES ==="
-      for_ failed $ \(testId, _, msg) => putStrLn "\{testId}: \{msg}"
+      for_ failed $ \r => case r of
+        Fail testId msg => putStrLn "\{testId}: \{msg}"
+        _ => pure ()
 
     _ => putStrLn "Usage:\n  yaml-test-runner <file.yaml>\n  yaml-test-runner --suite <test-suite-dir>"

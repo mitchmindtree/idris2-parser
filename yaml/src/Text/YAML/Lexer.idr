@@ -208,21 +208,28 @@ lineHasMappingIndicator (':' :: '\n' :: _) = True
 lineHasMappingIndicator (':' :: '\r' :: _) = True
 lineHasMappingIndicator (_ :: xs) = lineHasMappingIndicator xs
 
-||| Characters that always terminate a plain scalar in block context
-isPlainEndBlock : Char -> Bool
-isPlainEndBlock '#' = True
-isPlainEndBlock '\n' = True
-isPlainEndBlock '\r' = True
-isPlainEndBlock _   = False
+||| Characters that always terminate a plain scalar (regardless of context)
+isPlainEndAlways : Char -> Bool
+isPlainEndAlways '\n' = True
+isPlainEndAlways '\r' = True
+isPlainEndAlways _   = False
 
-||| Characters that always terminate a plain scalar in flow context
-isPlainEndFlow : Char -> Bool
-isPlainEndFlow ','  = True
-isPlainEndFlow '['  = True
-isPlainEndFlow ']'  = True
-isPlainEndFlow '{'  = True
-isPlainEndFlow '}'  = True
-isPlainEndFlow c    = isPlainEndBlock c
+||| Flow indicators that terminate a plain scalar in flow context
+isFlowIndicator : Char -> Bool
+isFlowIndicator ','  = True
+isFlowIndicator '['  = True
+isFlowIndicator ']'  = True
+isFlowIndicator '{'  = True
+isFlowIndicator '}'  = True
+isFlowIndicator _    = False
+
+||| Check if the last character in a SnocList is whitespace
+||| Used to determine if # starts a comment (only after whitespace)
+lastIsSpace : SnocList Char -> Bool
+lastIsSpace [<] = True  -- Start of scalar counts as "after whitespace"
+lastIsSpace (_ :< ' ') = True
+lastIsSpace (_ :< '\t') = True
+lastIsSpace _ = False
 
 ||| Characters that make ':' a mapping indicator when they follow it
 ||| In flow context, ':' is only an indicator when followed by whitespace or flow indicator
@@ -318,9 +325,14 @@ mutual
       else if shouldContinuePlain bi xs
         then plainScalarContinue bi (rtrimLine sc :< ' ') xs
         else finishScalar sc ('\r' :: '\n' :: xs)
-  -- Comment or other line-ending chars
+  -- Hash: only ends scalar if preceded by whitespace (comment)
+  plainScalarBlockMulti bi sc ('#' :: xs) =
+    if lastIsSpace sc
+      then finishScalar sc ('#' :: xs)
+      else plainScalarBlockMulti bi (sc :< '#') xs
+  -- Other characters
   plainScalarBlockMulti bi sc (c :: xs) =
-    if isPlainEndBlock c
+    if isPlainEndAlways c
       then finishScalar sc (c :: xs)
       else plainScalarBlockMulti bi (sc :< c) xs
   plainScalarBlockMulti bi sc [] = finishScalar sc []
@@ -333,8 +345,13 @@ plainScalarFlow sc (':' :: x :: xs) =
     then finishScalar sc (':' :: x :: xs)
     else plainScalarFlow (sc :< ':') (x :: xs)
 plainScalarFlow sc (':' :: []) = finishScalar sc (':' :: [])
+-- Hash: only ends scalar if preceded by whitespace (comment)
+plainScalarFlow sc ('#' :: xs) =
+  if lastIsSpace sc
+    then finishScalar sc ('#' :: xs)
+    else plainScalarFlow (sc :< '#') xs
 plainScalarFlow sc (c :: xs) =
-  if isPlainEndFlow c
+  if isPlainEndAlways c || isFlowIndicator c
     then finishScalar sc (c :: xs)
     else plainScalarFlow (sc :< c) xs
 plainScalarFlow sc [] = finishScalar sc []
