@@ -426,18 +426,7 @@ mutual
   -- Complex key with plain scalar: {? foo: value} or {? foo :,}
   -- Must handle this before general complex key to prevent value from starting block map
   flowMap b sv m (B TQuestion _ :: B (TScalar k) _ :: B TColon _ :: rest) (SA r) =
-    case rest of
-      -- Null value: { ? foo :, } or { ? foo : }
-      (B TComma _ :: ys)  => succT $ flowMap b (addOrMerge k YNull sv) m ys r
-      (B TRBrace _ :: ys) => Succ0 (m, YMap $ toList (addOrMerge k YNull sv)) ys
-      _ => case succT $ value m rest r of
-        Succ0 (m', v) (B TComma _ :: ys)  => succT $ flowMap b (addOrMerge k v sv) m' ys r
-        Succ0 (m', v) (B TRBrace _ :: ys) => Succ0 (m', YMap $ toList (addOrMerge k v sv)) ys
-        Succ0 _ (B TEOI _ :: _)           => unclosed b TLBrace
-        Fail0 (B (Expected [] "end of input") _) => unclosed b TLBrace
-        Succ0 _ (y :: ys)                 => unexpected y
-        Succ0 _ []                        => unclosed b TLBrace
-        Fail0 err                         => Fail0 err
+    succT $ flowMapAfterColon b sv k m rest r
   -- Complex key in flow mapping: {? key: value}
   flowMap b sv m (B TQuestion _ :: xs) (SA r) =
     case succT $ value m xs r of
@@ -472,14 +461,7 @@ mutual
       Succ0 _ []                        => unclosed b TLBrace
       Fail0 err                         => Fail0 err
   flowMap b sv m (B (TScalar k) _ :: B TColon _ :: xs) (SA r) =
-    case succT $ value m xs r of
-      Succ0 (m', v) (B TComma _ :: ys)  => succT $ flowMap b (addOrMerge k v sv) m' ys r
-      Succ0 (m', v) (B TRBrace _ :: ys) => Succ0 (m', YMap $ toList (addOrMerge k v sv)) ys
-      Succ0 _ (B TEOI _ :: _)           => unclosed b TLBrace
-      Fail0 (B (Expected [] "end of input") _) => unclosed b TLBrace
-      Succ0 _ (y :: ys)                 => unexpected y
-      Succ0 _ []                        => unclosed b TLBrace
-      Fail0 err                         => Fail0 err
+    succT $ flowMapAfterColon b sv k m xs r
   -- Scalar followed by comma = implicit key with null value
   flowMap b sv m (B (TScalar k) _ :: B TComma _ :: xs) (SA r) =
     succT $ flowMap b (addOrMerge k YNull sv) m xs r
@@ -489,6 +471,26 @@ mutual
   flowMap b sv m (B (TScalar _) _ :: x :: xs) _ = expected x.bounds "':'" "\{x.val}"
   flowMap b sv m (x :: xs) _ = expected x.bounds "key" "\{x.val}"
   flowMap b sv m [] _ = eoi
+
+  -- Parse value after colon in flow map, handling null values (comma/brace = null)
+  flowMapAfterColon : Bounds -> MapAcc -> YAMLValue -> RuleA True YAMLValue
+  flowMapAfterColon b sv k m (B TComma _ :: xs) (SA r) =
+    succT $ flowMap b (addOrMerge k YNull sv) m xs r
+  -- RBrace after colon = null value, end of map
+  flowMapAfterColon b sv k m (B TRBrace _ :: xs) _ =
+    Succ0 (m, YMap $ toList (addOrMerge k YNull sv)) xs
+  -- Otherwise parse value (use full list with matching suffix proof)
+  flowMapAfterColon b sv k m xs@(_ :: _) acc@(SA r) =
+    case value m xs acc of
+      Succ0 (m', v) (B TComma _ :: ys)  => succT $ flowMap b (addOrMerge k v sv) m' ys r
+      Succ0 (m', v) (B TRBrace _ :: ys) => Succ0 (m', YMap $ toList (addOrMerge k v sv)) ys
+      Succ0 _ (B TEOI _ :: _)           => unclosed b TLBrace
+      Fail0 (B (Expected [] "end of input") _) => unclosed b TLBrace
+      Succ0 _ (y :: ys)                 => unexpected y
+      Succ0 _ []                        => unclosed b TLBrace
+      Fail0 err                         => Fail0 err
+  -- Empty input
+  flowMapAfterColon b sv k m [] _ = unclosed b TLBrace
 
 --------------------------------------------------------------------------------
 --          Entry Point
