@@ -765,13 +765,10 @@ blockTok bi (c :: xs)                = TScalar . interpretScalar <$> plainScalar
 blockTok bi []                       = eoiAt Same
 
 ||| Lex a single token in flow context
+||| In flow context, ':' is always a value indicator (cannot start plain scalar)
 flowTok : Tok True e YAMLToken
 flowTok (',' :: xs)  = Succ TComma xs
-flowTok (':' :: x :: xs) =
-  if isMappingIndicatorNext x
-    then Succ TColon (x :: xs)
-    else TScalar . interpretScalar <$> plainScalarFlow [< ':'] (x :: xs)
-flowTok (':' :: [])  = Succ TColon []
+flowTok (':' :: xs)  = Succ TColon xs  -- Always value indicator in flow
 flowTok ('?' :: xs)  = Succ TQuestion xs
 flowTok ('[' :: xs)  = Succ TLBracket xs
 flowTok (']' :: xs)  = Succ TRBracket xs
