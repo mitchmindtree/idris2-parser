@@ -1192,6 +1192,11 @@ prop_tag_nested_map = parseOk
   """
   (YMap [(YStr "foo", YMap [(YStr "key", YStr "value")])])
 
+-- Tag with percent encoding (%21 = !)
+prop_tag_percent_encoding : Property
+prop_tag_percent_encoding = parseOk "!tag%21name value"
+  (YStr "value")
+
 -- Anchor with tag
 prop_anchor_with_tag : Property
 prop_anchor_with_tag = parseOk
@@ -1751,6 +1756,7 @@ properties =
     , ("prop_flow_adjacent_colon_map", prop_flow_adjacent_colon_map)
     , ("prop_tag_newline_indent", prop_tag_newline_indent)
     , ("prop_tag_nested_map", prop_tag_nested_map)
+    , ("prop_tag_percent_encoding", prop_tag_percent_encoding)
     , ("prop_anchor_with_tag", prop_anchor_with_tag)
     , ("prop_alias_undefined", prop_alias_undefined)
     , ("prop_alias_before_anchor", prop_alias_before_anchor)

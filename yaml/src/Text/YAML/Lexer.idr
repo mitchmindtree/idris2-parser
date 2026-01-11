@@ -619,12 +619,22 @@ interpretScalar s = case tryYamlInteger s of
 --          Tags
 --------------------------------------------------------------------------------
 
-||| Valid characters in a tag name (simplified - alphanumeric, -, _)
+||| Valid characters in a tag name (simplified - alphanumeric, -, _, /, :, #)
+||| Extended to include more URI characters that appear in tag handles
 isTagChar : Char -> Bool
-isTagChar c = isAlphaNum c || c == '-' || c == '_' || c == '.'
+isTagChar c = isAlphaNum c || c == '-' || c == '_' || c == '.' || c == '/' || c == ':' || c == '#'
 
-||| Read tag characters
+||| Decode a percent-encoded character (%XX where XX is hex)
+decodePercent : Char -> Char -> Char
+decodePercent h1 h2 = hexChar [h1, h2]
+
+||| Read tag characters, handling percent encoding
 tagChars : SnocList Char -> AutoTok e String
+-- Percent encoding: %XX -> decoded char
+tagChars sc ('%' :: h1 :: h2 :: xs) =
+  if isHexDigit h1 && isHexDigit h2
+    then tagChars (sc :< decodePercent h1 h2) xs
+    else Succ (cast sc) ('%' :: h1 :: h2 :: xs)  -- Invalid encoding, stop
 tagChars sc (c :: xs) =
   if isTagChar c
     then tagChars (sc :< c) xs
