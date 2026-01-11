@@ -164,14 +164,34 @@ rtrimLine sx           = sx
 finishScalar : SnocList Char -> AutoTok e String
 finishScalar sc rest = Succ (cast $ rtrimLine sc) rest
 
-||| Check if a line starts with a block indicator (- or : followed by whitespace)
+||| Check if a line starts with a block indicator (- or ? followed by whitespace)
+||| or a document marker (--- or ...)
 ||| These indicate a new block structure, not a plain scalar continuation
 lineStartsWithBlockIndicator : List Char -> Bool
+-- Document start marker
+lineStartsWithBlockIndicator ('-' :: '-' :: '-' :: ' ' :: _) = True
+lineStartsWithBlockIndicator ('-' :: '-' :: '-' :: '\t' :: _) = True
+lineStartsWithBlockIndicator ('-' :: '-' :: '-' :: '\n' :: _) = True
+lineStartsWithBlockIndicator ('-' :: '-' :: '-' :: '\r' :: _) = True
+lineStartsWithBlockIndicator ('-' :: '-' :: '-' :: []) = True
+-- Document end marker
+lineStartsWithBlockIndicator ('.' :: '.' :: '.' :: ' ' :: _) = True
+lineStartsWithBlockIndicator ('.' :: '.' :: '.' :: '\t' :: _) = True
+lineStartsWithBlockIndicator ('.' :: '.' :: '.' :: '\n' :: _) = True
+lineStartsWithBlockIndicator ('.' :: '.' :: '.' :: '\r' :: _) = True
+lineStartsWithBlockIndicator ('.' :: '.' :: '.' :: []) = True
+-- Block sequence entry
 lineStartsWithBlockIndicator ('-' :: ' ' :: _) = True
 lineStartsWithBlockIndicator ('-' :: '\t' :: _) = True
 lineStartsWithBlockIndicator ('-' :: '\n' :: _) = True
 lineStartsWithBlockIndicator ('-' :: '\r' :: _) = True
 lineStartsWithBlockIndicator ('-' :: []) = True
+-- Complex key indicator
+lineStartsWithBlockIndicator ('?' :: ' ' :: _) = True
+lineStartsWithBlockIndicator ('?' :: '\t' :: _) = True
+lineStartsWithBlockIndicator ('?' :: '\n' :: _) = True
+lineStartsWithBlockIndicator ('?' :: '\r' :: _) = True
+lineStartsWithBlockIndicator ('?' :: []) = True
 lineStartsWithBlockIndicator _ = False
 
 ||| Check if a line contains a mapping indicator (: followed by whitespace/EOL)
@@ -224,11 +244,12 @@ countAndSkipSpaces n (' ' :: xs) = countAndSkipSpaces (S n) xs
 countAndSkipSpaces n xs = (n, xs)
 
 ||| Check if we should continue plain scalar on next line
-||| Returns True if: more indented AND no block indicator at start AND no mapping indicator on line
+||| Returns True if: same or more indented AND no block indicator at start AND no mapping indicator on line
+||| Per YAML spec, plain scalars end on less-indented lines, not same-indented lines
 shouldContinuePlain : (baseIndent : Nat) -> List Char -> Bool
 shouldContinuePlain bi xs =
   let (spaces, rest) = countAndSkipSpaces 0 xs
-   in spaces > bi
+   in spaces >= bi
       && not (lineStartsWithBlockIndicator rest)
       && not (lineHasMappingIndicator rest)
 

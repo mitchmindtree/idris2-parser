@@ -795,6 +795,10 @@ prop_multiline_plain_deep_indent = parseOk
   """
   (YMap [(YStr "outer", YMap [(YStr "inner", YStr "start more content")])])
 
+-- Top-level multiline plain scalar (column 0, same indentation continuation)
+prop_multiline_plain_toplevel : Property
+prop_multiline_plain_toplevel = parseOk "Bare\ndocument" (YStr "Bare document")
+
 --------------------------------------------------------------------------------
 --          Tags
 --------------------------------------------------------------------------------
@@ -1609,6 +1613,7 @@ properties =
     , ("prop_multiline_plain_url", prop_multiline_plain_url)
     , ("prop_multiline_plain_then_sibling", prop_multiline_plain_then_sibling)
     , ("prop_multiline_plain_deep_indent", prop_multiline_plain_deep_indent)
+    , ("prop_multiline_plain_toplevel", prop_multiline_plain_toplevel)
     , ("prop_tag_str_number", prop_tag_str_number)
     , ("prop_tag_str_bool", prop_tag_str_bool)
     , ("prop_tag_int_string", prop_tag_int_string)
