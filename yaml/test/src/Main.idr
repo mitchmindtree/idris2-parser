@@ -849,6 +849,16 @@ prop_tag_on_map : Property
 prop_tag_on_map = parseOk "value: !!map {a: 1}"
   (YMap [(YStr "value", YMap [(YStr "a", YInt 1)])])
 
+-- Tag after document start with content on next line
+prop_tag_doc_start_str : Property
+prop_tag_doc_start_str = parseOk "--- !!str\nhello"
+  (YStr "hello")
+
+-- Tag after document start for mapping
+prop_tag_doc_start_map : Property
+prop_tag_doc_start_map = parseOk "--- !!map\na: b"
+  (YMap [(YStr "a", YStr "b")])
+
 -- Verbatim tag syntax !<uri>
 prop_tag_verbatim : Property
 prop_tag_verbatim = parseOk "value: !<tag:yaml.org,2002:str> 123"
@@ -1109,6 +1119,15 @@ prop_anchor_hyphen_name = parseOk
 -- Unused anchor is valid
 prop_anchor_unused : Property
 prop_anchor_unused = parseOk "&unused 42" (YInt 42)
+
+-- Anchor with null value (anchor followed by newline)
+prop_anchor_null_value : Property
+prop_anchor_null_value = parseOk
+  """
+  a: &anchor
+  b: *anchor
+  """
+  (YMap [(YStr "a", YNull), (YStr "b", YNull)])
 
 -- Anchor on nested structure (using flow syntax)
 prop_anchor_nested : Property
@@ -1535,6 +1554,8 @@ properties =
     , ("prop_tag_local", prop_tag_local)
     , ("prop_tag_on_seq", prop_tag_on_seq)
     , ("prop_tag_on_map", prop_tag_on_map)
+    , ("prop_tag_doc_start_str", prop_tag_doc_start_str)
+    , ("prop_tag_doc_start_map", prop_tag_doc_start_map)
     , ("prop_tag_verbatim", prop_tag_verbatim)
     , ("prop_tag_in_flow", prop_tag_in_flow)
     , ("prop_directive_yaml", prop_directive_yaml)
@@ -1565,6 +1586,7 @@ properties =
     , ("prop_anchor_doc_scope", prop_anchor_doc_scope)
     , ("prop_anchor_hyphen_name", prop_anchor_hyphen_name)
     , ("prop_anchor_unused", prop_anchor_unused)
+    , ("prop_anchor_null_value", prop_anchor_null_value)
     , ("prop_anchor_nested", prop_anchor_nested)
     , ("prop_anchor_block_nested", prop_anchor_block_nested)
     , ("prop_anchor_block_seq", prop_anchor_block_seq)

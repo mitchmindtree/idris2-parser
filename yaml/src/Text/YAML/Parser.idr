@@ -338,6 +338,14 @@ mutual
       Fail0 err => Fail0 err
 
   value : RuleA True YAMLValue
+  -- Anchor with null value (anchor followed by newline, NOT followed by indent)
+  -- If followed by TNewline :: TIndent, it's a nested block value, not null
+  value m (B (TAnchor name) _ :: xs@(B TNewline _ :: B TIndent _ :: _)) (SA r) =
+    case succT $ value m xs r of
+      Succ0 (m', v) ys => Succ0 (insert name v m', v) ys
+      Fail0 err => Fail0 err
+  value m (B (TAnchor name) _ :: xs@(B TNewline _ :: _)) _ =
+    Succ0 (insert name YNull m, YNull) xs
   -- Anchor: parse value, register in map, return both
   value m (B (TAnchor name) _ :: xs) (SA r) =
     case succT $ value m xs r of
@@ -351,7 +359,15 @@ mutual
   -- Nested block value (e.g., anchor before nested content: &ref\n  key: val)
   value m (B TNewline _ :: xs@(B TIndent _ :: _)) (SA r) =
     succT $ blockNestedValue m xs r
+  -- Skip leading newline (e.g., after tag at document level: !!str\nhello)
+  value m (B TNewline _ :: xs) (SA r) = succT $ value m xs r
   -- Tagged value: parse the tag, then the value, and apply the tag
+  -- Special case: tag followed by newline at document level (e.g., "--- !!str\nhello")
+  value m (B (TTag tag) _ :: B TNewline _ :: xs) (SA r) =
+    case succT $ value m xs r of
+      Succ0 (m', v) ys => Succ0 (m', applyTag tag v) ys
+      Fail0 err => Fail0 err
+  -- Tag with content on same line or nested
   value m (B (TTag tag) _ :: xs) (SA r) =
     case succT $ value m xs r of
       Succ0 (m', v) ys => Succ0 (m', applyTag tag v) ys
