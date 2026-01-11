@@ -990,6 +990,50 @@ prop_complex_key_mixed = parseOk
   """
   (YMap [(YStr "simple", YStr "value"), (YSeq [YStr "complex"], YStr "other")])
 
+-- Complex keys with implicit null values (YAML set pattern)
+prop_complex_key_null_value : Property
+prop_complex_key_null_value = parseOk
+  """
+  ? a
+  ? b
+  """
+  (YMap [(YStr "a", YNull), (YStr "b", YNull)])
+
+-- Complex keys with implicit null, then regular key
+prop_complex_key_null_then_regular : Property
+prop_complex_key_null_then_regular = parseOk
+  """
+  ? a
+  ? b
+  c: d
+  """
+  (YMap [(YStr "a", YNull), (YStr "b", YNull), (YStr "c", YStr "d")])
+
+-- Complex key with block sequence as key (nested context)
+prop_complex_key_block_seq : Property
+prop_complex_key_block_seq = parseOk
+  """
+  outer:
+    ? - a
+  """
+  (YMap [(YStr "outer", YMap [(YSeq [YStr "a"], YNull)])])
+
+-- Complex key with block sequence and explicit value
+prop_complex_key_block_seq_value : Property
+prop_complex_key_block_seq_value = parseOk
+  """
+  outer:
+    ? - a
+    : b
+  """
+  (YMap [(YStr "outer", YMap [(YSeq [YStr "a"], YStr "b")])])
+
+-- Complex key with simple scalar and value at end of input
+prop_complex_key_eoi : Property
+prop_complex_key_eoi = parseOk
+  "? a\n:"
+  (YMap [(YStr "a", YNull)])
+
 --------------------------------------------------------------------------------
 --          Null Key Tests (empty/implicit key)
 --------------------------------------------------------------------------------
@@ -1736,6 +1780,11 @@ properties =
     , ("prop_complex_key_in_flow", prop_complex_key_in_flow)
     , ("prop_complex_key_nested_map", prop_complex_key_nested_map)
     , ("prop_complex_key_mixed", prop_complex_key_mixed)
+    , ("prop_complex_key_null_value", prop_complex_key_null_value)
+    , ("prop_complex_key_null_then_regular", prop_complex_key_null_then_regular)
+    , ("prop_complex_key_block_seq", prop_complex_key_block_seq)
+    , ("prop_complex_key_block_seq_value", prop_complex_key_block_seq_value)
+    , ("prop_complex_key_eoi", prop_complex_key_eoi)
     , ("prop_null_key_block", prop_null_key_block)
     , ("prop_null_key_null_value", prop_null_key_null_value)
     , ("prop_null_key_mixed", prop_null_key_mixed)

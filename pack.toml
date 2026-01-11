@@ -47,6 +47,11 @@ type = "local"
 path = "yaml/test"
 ipkg = "test.ipkg"
 
+[custom.all.parser-yaml-test-runner]
+type = "local"
+path = "yaml/test-runner"
+ipkg = "test-runner.ipkg"
+
 [custom.all.parser-json]
 type = "local"
 path = "json"

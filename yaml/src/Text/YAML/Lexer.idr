@@ -746,16 +746,20 @@ blockTok bi ('.' :: '.' :: '.' :: '\r' :: xs) = Succ TDocEnd ('\r' :: xs)
 blockTok bi ('.' :: '.' :: '.' :: [])         = Succ TDocEnd []
 -- Directive (must be at start of document, before ---)
 blockTok bi ('%' :: xs)              = lexDirective xs
--- Sequence item indicator
+-- Sequence item indicator (dash followed by whitespace or EOI)
+blockTok bi ['-']                    = Succ TDash []
 blockTok bi ('-' :: ' ' :: xs)       = Succ TDash (' ' :: xs)
 blockTok bi ('-' :: '\n' :: xs)      = Succ TDash ('\n' :: xs)
 blockTok bi ('-' :: '\r' :: xs)      = Succ TDash ('\r' :: xs)
 blockTok bi ('-' :: '\t' :: xs)      = Succ TDash ('\t' :: xs)
+-- Value indicator (colon followed by whitespace or EOI)
+blockTok bi [':']                    = Succ TColon []
 blockTok bi (':' :: ' ' :: xs)       = Succ TColon (' ' :: xs)
 blockTok bi (':' :: '\n' :: xs)      = Succ TColon ('\n' :: xs)
 blockTok bi (':' :: '\r' :: xs)      = Succ TColon ('\r' :: xs)
 blockTok bi (':' :: '\t' :: xs)      = Succ TColon ('\t' :: xs)
--- Complex key indicator
+-- Complex key indicator (? followed by whitespace or EOI)
+blockTok bi ['?']                    = Succ TQuestion []
 blockTok bi ('?' :: ' ' :: xs)       = Succ TQuestion (' ' :: xs)
 blockTok bi ('?' :: '\n' :: xs)      = Succ TQuestion ('\n' :: xs)
 blockTok bi ('?' :: '\r' :: xs)      = Succ TQuestion ('\r' :: xs)

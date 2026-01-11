@@ -283,6 +283,9 @@ mutual
   -- End of mapping: just newline
   blockMapAfterColon k sv m (B TNewline _ :: xs) (SA r) =
     Succ0 (m, YMap $ toList (addOrMerge k YNull sv)) xs
+  -- End of input: null value at end of document (TEOI only)
+  blockMapAfterColon k sv m (B TEOI _ :: xs) _ =
+    Succ0 (m, YMap $ toList (addOrMerge k YNull sv)) xs
   -- Value on same line
   blockMapAfterColon k sv m xs acc@(SA r) =
     case value m xs acc of
@@ -346,6 +349,36 @@ mutual
         Succ0 (m', YMap $ toList (addOrMerge k v sv)) ys
       Fail0 err => Fail0 err
 
+  -- Continue parsing complex key map after seeing another ? (previous key had null value)
+  -- k: the key that was just parsed (with null value)
+  -- sv: accumulated key-value pairs so far
+  complexKeyMapContinue : YAMLValue -> MapAcc -> RuleA True YAMLValue
+  complexKeyMapContinue k sv m (B TQuestion _ :: xs) (SA r) =
+    case succT $ value m xs r of
+      -- Colon after key
+      Succ0 (m', k2) (B TColon _ :: rest) =>
+        succT $ blockMapAfterColon k2 (addOrMerge k YNull sv) m' rest r
+      -- Colon on next line
+      Succ0 (m', k2) (B TNewline _ :: B TColon _ :: rest) =>
+        succT $ blockMapAfterColon k2 (addOrMerge k YNull sv) m' rest r
+      -- Another complex key (k2 also has null value)
+      Succ0 (m', k2) (B TNewline _ :: rest@(B TQuestion _ :: _)) =>
+        succT $ complexKeyMapContinue k2 (addOrMerge k YNull sv) m' rest r
+      -- Regular key follows
+      Succ0 (m', k2) (B TNewline _ :: B (TScalar k3) _ :: B TColon _ :: rest) =>
+        succT $ blockMapAfterColon k3 (addOrMerge k2 YNull (addOrMerge k YNull sv)) m' rest r
+      -- End of block
+      Succ0 (m', k2) rest@(B TNewline _ :: B TDedent _ :: _) =>
+        Succ0 (m', YMap $ toList (addOrMerge k2 YNull (addOrMerge k YNull sv))) rest
+      -- End of document
+      Succ0 (m', k2) rest@[] =>
+        Succ0 (m', YMap $ toList (addOrMerge k2 YNull (addOrMerge k YNull sv))) rest
+      Succ0 (m', k2) rest@[B TEOI _] =>
+        Succ0 (m', YMap $ toList (addOrMerge k2 YNull (addOrMerge k YNull sv))) rest
+      Succ0 _ ys => fail ys
+      Fail0 err => Fail0 err
+  complexKeyMapContinue k sv m xs _ = fail xs
+
   value : RuleA True YAMLValue
   -- Anchor with null value (anchor followed by newline, NOT followed by indent)
   -- If followed by TNewline :: TIndent, it's a nested block value, not null
@@ -408,6 +441,7 @@ mutual
   -- Block sequence: parse first dash, then delegate to blockSeqItems
   value m (B TDash _ :: xs) (SA r) = succT $ blockSeqItems [<] m xs r
   -- Complex key: ? key : value (allows any value type as key)
+  -- Complex keys can have implicit null values when no : follows
   value m (B TQuestion _ :: xs) (SA r) =
     case succT $ value m xs r of
       -- Colon immediately after key
@@ -416,7 +450,29 @@ mutual
       -- Colon on next line after key
       Succ0 (m', k) (B TNewline _ :: B TColon _ :: rest) =>
         succT $ blockMapAfterColon k empty m' rest r
-      -- Missing colon after complex key
+      -- Colon after block scalar key (block scalar consumes newline, may have dedent)
+      Succ0 (m', k) (B TDedent _ :: B TColon _ :: rest) =>
+        succT $ blockMapAfterColon k empty m' rest r
+      Succ0 (m', k) (B (TScalar _) _ :: B TColon _ :: rest) =>
+        -- Block scalar followed by key:value - not a complex key continuation
+        succT $ blockMapAfterColon k empty m' rest r
+      -- Implicit null value: another complex key follows
+      Succ0 (m', k) (B TNewline _ :: rest@(B TQuestion _ :: _)) =>
+        succT $ complexKeyMapContinue k empty m' rest r
+      -- Implicit null value: regular key follows at same level
+      Succ0 (m', k) (B TNewline _ :: B (TScalar k2) _ :: B TColon _ :: rest) =>
+        succT $ blockMapAfterColon k2 (insert k YNull empty) m' rest r
+      -- Implicit null value: end of block (dedent)
+      Succ0 (m', k) rest@(B TNewline _ :: B TDedent _ :: _) =>
+        Succ0 (m', YMap [(k, YNull)]) rest
+      Succ0 (m', k) rest@(B TDedent _ :: _) =>
+        Succ0 (m', YMap [(k, YNull)]) rest
+      -- Implicit null value: end of document
+      Succ0 (m', k) rest@[] =>
+        Succ0 (m', YMap [(k, YNull)]) rest
+      Succ0 (m', k) rest@[B TEOI _] =>
+        Succ0 (m', YMap [(k, YNull)]) rest
+      -- Missing colon after complex key (not a valid continuation)
       Succ0 _ ys => fail ys
       Fail0 err => Fail0 err
   -- Null key mapping: colon without preceding key (implicit null key)
