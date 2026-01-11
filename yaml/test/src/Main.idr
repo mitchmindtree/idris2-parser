@@ -1091,6 +1091,21 @@ prop_flow_implicit_null_seq : Property
 prop_flow_implicit_null_seq = parseOk "- { \"single line\", a: b}"
   (YSeq [YMap [(YStr "a", YStr "b"), (YStr "single line", YNull)]])
 
+-- Flow map: null key with value
+prop_flow_null_key : Property
+prop_flow_null_key = parseOk "{ : value }"
+  (YMap [(YNull, YStr "value")])
+
+-- Flow map: null key with other entries
+prop_flow_null_key_mixed : Property
+prop_flow_null_key_mixed = parseOk "{ : first, a: b }"
+  (YMap [(YNull, YStr "first"), (YStr "a", YStr "b")])
+
+-- Flow map: null key with null value
+prop_flow_null_key_null_value : Property
+prop_flow_null_key_null_value = parseOk "{ : }"
+  (YMap [(YNull, YNull)])
+
 -- Anchor with tag
 prop_anchor_with_tag : Property
 prop_anchor_with_tag = parseOk
@@ -1598,6 +1613,9 @@ properties =
     , ("prop_flow_implicit_null", prop_flow_implicit_null)
     , ("prop_flow_implicit_null_last", prop_flow_implicit_null_last)
     , ("prop_flow_implicit_null_seq", prop_flow_implicit_null_seq)
+    , ("prop_flow_null_key", prop_flow_null_key)
+    , ("prop_flow_null_key_mixed", prop_flow_null_key_mixed)
+    , ("prop_flow_null_key_null_value", prop_flow_null_key_null_value)
     , ("prop_anchor_with_tag", prop_anchor_with_tag)
     , ("prop_alias_undefined", prop_alias_undefined)
     , ("prop_alias_before_anchor", prop_alias_before_anchor)

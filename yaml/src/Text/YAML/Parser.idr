@@ -437,6 +437,21 @@ mutual
           Fail0 err                          => Fail0 err
       Succ0 _ ys => fail ys  -- Missing colon after complex key
       Fail0 err => Fail0 err
+  -- Null key with null value: { :, } or { : }
+  flowMap b sv m (B TColon _ :: B TComma _ :: xs) (SA r) =
+    succT $ flowMap b (addOrMerge YNull YNull sv) m xs r
+  flowMap b sv m (B TColon _ :: B TRBrace _ :: xs) _ =
+    Succ0 (m, YMap $ toList (addOrMerge YNull YNull sv)) xs
+  -- Null key: { : value }
+  flowMap b sv m (B TColon _ :: xs) (SA r) =
+    case succT $ value m xs r of
+      Succ0 (m', v) (B TComma _ :: ys)  => succT $ flowMap b (addOrMerge YNull v sv) m' ys r
+      Succ0 (m', v) (B TRBrace _ :: ys) => Succ0 (m', YMap $ toList (addOrMerge YNull v sv)) ys
+      Succ0 _ (B TEOI _ :: _)           => unclosed b TLBrace
+      Fail0 (B (Expected [] "end of input") _) => unclosed b TLBrace
+      Succ0 _ (y :: ys)                 => unexpected y
+      Succ0 _ []                        => unclosed b TLBrace
+      Fail0 err                         => Fail0 err
   flowMap b sv m (B (TScalar k) _ :: B TColon _ :: xs) (SA r) =
     case succT $ value m xs r of
       Succ0 (m', v) (B TComma _ :: ys)  => succT $ flowMap b (addOrMerge k v sv) m' ys r
