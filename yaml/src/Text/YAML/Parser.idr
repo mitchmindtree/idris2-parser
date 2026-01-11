@@ -446,6 +446,12 @@ mutual
       Succ0 _ (y :: ys)                 => unexpected y
       Succ0 _ []                        => unclosed b TLBrace
       Fail0 err                         => Fail0 err
+  -- Scalar followed by comma = implicit key with null value
+  flowMap b sv m (B (TScalar k) _ :: B TComma _ :: xs) (SA r) =
+    succT $ flowMap b (addOrMerge k YNull sv) m xs r
+  -- Scalar followed by } = implicit key with null value (last entry)
+  flowMap b sv m (B (TScalar k) _ :: B TRBrace _ :: xs) _ =
+    Succ0 (m, YMap $ toList (addOrMerge k YNull sv)) xs
   flowMap b sv m (B (TScalar _) _ :: x :: xs) _ = expected x.bounds "':'" "\{x.val}"
   flowMap b sv m (x :: xs) _ = expected x.bounds "key" "\{x.val}"
   flowMap b sv m [] _ = eoi

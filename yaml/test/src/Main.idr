@@ -1076,6 +1076,21 @@ prop_anchor_flow_seq : Property
 prop_anchor_flow_seq = parseOk "[&a 1, *a, *a]"
   (YSeq [YInt 1, YInt 1, YInt 1])
 
+-- Flow map: scalar without colon = implicit key with null value
+prop_flow_implicit_null : Property
+prop_flow_implicit_null = parseOk "{ \"key\", a: b }"
+  (YMap [(YStr "a", YStr "b"), (YStr "key", YNull)])
+
+-- Flow map: scalar at end without colon = implicit key with null value
+prop_flow_implicit_null_last : Property
+prop_flow_implicit_null_last = parseOk "{ a: 1, \"solo\" }"
+  (YMap [(YStr "a", YInt 1), (YStr "solo", YNull)])
+
+-- Flow map in sequence (yaml-test-suite 9BXH format)
+prop_flow_implicit_null_seq : Property
+prop_flow_implicit_null_seq = parseOk "- { \"single line\", a: b}"
+  (YSeq [YMap [(YStr "a", YStr "b"), (YStr "single line", YNull)]])
+
 -- Anchor with tag
 prop_anchor_with_tag : Property
 prop_anchor_with_tag = parseOk
@@ -1580,6 +1595,9 @@ properties =
     , ("prop_anchor_reuse", prop_anchor_reuse)
     , ("prop_anchor_flow", prop_anchor_flow)
     , ("prop_anchor_flow_seq", prop_anchor_flow_seq)
+    , ("prop_flow_implicit_null", prop_flow_implicit_null)
+    , ("prop_flow_implicit_null_last", prop_flow_implicit_null_last)
+    , ("prop_flow_implicit_null_seq", prop_flow_implicit_null_seq)
     , ("prop_anchor_with_tag", prop_anchor_with_tag)
     , ("prop_alias_undefined", prop_alias_undefined)
     , ("prop_alias_before_anchor", prop_alias_before_anchor)
