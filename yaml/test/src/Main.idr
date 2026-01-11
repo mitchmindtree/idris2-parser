@@ -1116,6 +1116,11 @@ prop_flow_complex_key_scalar_null : Property
 prop_flow_complex_key_scalar_null = parseOk "{? foo :,}"
   (YMap [(YStr "foo", YNull)])
 
+-- Flow seq: implicit key with null value
+prop_flow_seq_implicit_null : Property
+prop_flow_seq_implicit_null = parseOk "[a:, b]"
+  (YSeq [YMap [(YStr "a", YNull)], YStr "b"])
+
 -- Anchor with tag
 prop_anchor_with_tag : Property
 prop_anchor_with_tag = parseOk
@@ -1628,6 +1633,7 @@ properties =
     , ("prop_flow_null_key_null_value", prop_flow_null_key_null_value)
     , ("prop_flow_complex_key_null", prop_flow_complex_key_null)
     , ("prop_flow_complex_key_scalar_null", prop_flow_complex_key_scalar_null)
+    , ("prop_flow_seq_implicit_null", prop_flow_seq_implicit_null)
     , ("prop_anchor_with_tag", prop_anchor_with_tag)
     , ("prop_alias_undefined", prop_alias_undefined)
     , ("prop_alias_before_anchor", prop_alias_before_anchor)

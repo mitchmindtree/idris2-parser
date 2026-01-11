@@ -388,6 +388,11 @@ mutual
       Fail0 err => Fail0 err
   -- Null key mapping: colon without preceding key (implicit null key)
   value m (B TColon _ :: xs) (SA r) = succT $ blockMapAfterColon YNull empty m xs r
+  -- In flow context: scalar followed by colon then flow indicator - return scalar, leave colon
+  -- This allows flowSeq/flowMap to handle the implicit key pattern
+  value m (B (TScalar k) _ :: xs@(B TColon _ :: B TComma _ :: _)) _ = Succ0 (m, k) xs
+  value m (B (TScalar k) _ :: xs@(B TColon _ :: B TRBracket _ :: _)) _ = Succ0 (m, k) xs
+  value m (B (TScalar k) _ :: xs@(B TColon _ :: B TRBrace _ :: _)) _ = Succ0 (m, k) xs
   -- Block mapping: scalar followed by colon, delegate to blockMapAfterColon
   value m (B (TScalar k) _ :: B TColon _ :: xs) (SA r) = succT $ blockMapAfterColon k empty m xs r
   -- Plain scalar value
@@ -403,15 +408,20 @@ mutual
   flowSeq b sv m xs acc@(SA r) = case value m xs acc of
     -- Implicit key: value followed by colon becomes single-pair map
     Succ0 (m', k) (B TColon _ :: ys) =>
-      case succT $ value m' ys r of
-        Succ0 (m'', v) (B TComma _ :: zs)    =>
-          succT $ flowSeq b (sv :< YMap [(k, v)]) m'' zs r
-        Succ0 (m'', v) (B TRBracket _ :: zs) =>
-          Succ0 (m'', YSeq $ sv <>> [YMap [(k, v)]]) zs
-        Succ0 _ (B TEOI _ :: _)              => unclosed b TLBracket
-        Succ0 _ (z :: _)                     => unexpected z
-        Succ0 _ []                           => unclosed b TLBracket
-        Fail0 err                            => Fail0 err
+      case ys of
+        -- Null value: [key:, ...] or [key:]
+        (B TComma _ :: zs)    => succT $ flowSeq b (sv :< YMap [(k, YNull)]) m' zs r
+        (B TRBracket _ :: zs) => Succ0 (m', YSeq $ sv <>> [YMap [(k, YNull)]]) zs
+        -- Parse value after colon
+        _ => case succT $ value m' ys r of
+          Succ0 (m'', v) (B TComma _ :: zs)    =>
+            succT $ flowSeq b (sv :< YMap [(k, v)]) m'' zs r
+          Succ0 (m'', v) (B TRBracket _ :: zs) =>
+            Succ0 (m'', YSeq $ sv <>> [YMap [(k, v)]]) zs
+          Succ0 _ (B TEOI _ :: _)              => unclosed b TLBracket
+          Succ0 _ (z :: _)                     => unexpected z
+          Succ0 _ []                           => unclosed b TLBracket
+          Fail0 err                            => Fail0 err
     -- Regular sequence elements
     Succ0 (m', v) (B TComma _ :: ys)    => succT $ flowSeq b (sv :< v) m' ys r
     Succ0 (m', v) (B TRBracket _ :: ys) => Succ0 (m', YSeq $ sv <>> [v]) ys

@@ -1,0 +1,9 @@
+package parser-yaml-test-runner
+version = 0.1.0
+
+depends = parser-yaml
+
+sourcedir = "src"
+
+main = Main
+executable = "yaml-test-runner"
