@@ -838,8 +838,12 @@ mutual
                 in lex ctx stack2 pos sx2 xs acc
           else if spaces < curIndent
             -- Indentation decreased: pop levels, emit TDedent for each
+            -- Validate that new indentation matches an established level
             then let (stack2, sx2) = popIndents pos sx spaces stack
-                  in lex ctx stack2 pos sx2 xs acc
+                     expectedIndent = currentIndent stack2
+                  in if spaces == expectedIndent
+                       then lex ctx stack2 pos sx2 xs acc
+                       else Left $ bounded (Custom (IndentError expectedIndent spaces)) pos pos
             -- Same indentation: continue
             else lex ctx stack pos sx xs acc
 
@@ -902,7 +906,19 @@ mutual
                 in lex ctx2 stack pos2 sx2 ys r
              Fail start errEnd e => Left $ boundedErr pos start errEnd e
 
+||| Count initial spaces on the first line to establish base indentation
+||| Returns (spaces, pos, remaining chars) where pos is updated for skipped spaces
+countInitialIndent : Position -> Nat -> List Char -> (Nat, Position, List Char)
+countInitialIndent pos n (' ' :: xs) = countInitialIndent (incCol pos) (S n) xs
+countInitialIndent pos n xs = (n, pos, xs)
+
 ||| Lex a YAML string into a list of tokens
 export
 lexYAML : String -> Either (Bounded YAMLErr) (List $ Bounded YAMLToken)
-lexYAML s = lex NoFlow [0] begin [<] (unpack s) suffixAcc
+lexYAML s =
+  let cs = unpack s
+      -- Count initial indentation to establish base level for documents starting indented
+      (initIndent, pos, rest) = countInitialIndent begin 0 cs
+      -- If document starts with indentation, push it to the stack
+      stack = if initIndent > 0 then [initIndent, 0] else [0]
+   in lex NoFlow stack pos [<] rest suffixAcc

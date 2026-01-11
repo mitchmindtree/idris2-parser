@@ -1480,6 +1480,41 @@ prop_merge_null = parseOk
   (YMap [(YStr "x", YMap [(YStr "a", YInt 1)])])
 
 --------------------------------------------------------------------------------
+--          Indentation Error Tests
+--------------------------------------------------------------------------------
+
+-- Dedent to invalid indentation level (between two established levels)
+-- DMG6: key at col 0, nested at col 2, invalid continuation at col 1
+prop_indent_invalid_dedent : Property
+prop_indent_invalid_dedent = parseErr
+  """
+  key:
+    ok: 1
+   wrong: 2
+  """
+
+-- Less-indented sibling (between parent and sibling level)
+-- N4JP: siblings at col 2, invalid sibling at col 1
+prop_indent_less_than_sibling : Property
+prop_indent_less_than_sibling = parseErr
+  """
+  map:
+    key1: "quoted1"
+   key2: "bad indentation"
+  """
+
+-- Document starting indented is valid
+prop_indent_document_indented : Property
+prop_indent_document_indented = parseOk
+  """
+   - key: value
+     key2: value2
+   -
+     key3: value3
+  """
+  (YSeq [YMap [(YStr "key", YStr "value"), (YStr "key2", YStr "value2")], YMap [(YStr "key3", YStr "value3")]])
+
+--------------------------------------------------------------------------------
 --          Main Function
 --------------------------------------------------------------------------------
 
@@ -1697,6 +1732,9 @@ properties =
     , ("prop_merge_non_map", prop_merge_non_map)
     , ("prop_merge_quoted_not_merge", prop_merge_quoted_not_merge)
     , ("prop_merge_null", prop_merge_null)
+    , ("prop_indent_invalid_dedent", prop_indent_invalid_dedent)
+    , ("prop_indent_less_than_sibling", prop_indent_less_than_sibling)
+    , ("prop_indent_document_indented", prop_indent_document_indented)
     ]
 
 main : IO ()
