@@ -1145,6 +1145,53 @@ prop_flow_anchor_key : Property
 prop_flow_anchor_key = parseOk "{ &a foo: val }"
   (YMap [(YStr "foo", YStr "val")])
 
+--------------------------------------------------------------------------------
+--          Flow Context Edge Cases
+--------------------------------------------------------------------------------
+
+-- Hash in URL (# is not comment unless preceded by whitespace)
+prop_flow_hash_in_url : Property
+prop_flow_hash_in_url = parseOk "[ http://example.com/foo#bar ]"
+  (YSeq [YStr "http://example.com/foo#bar"])
+
+-- Multiline plain scalar in flow context (line folding)
+prop_flow_multiline_plain : Property
+prop_flow_multiline_plain = parseOk "{ multi\n  line, a: b }"
+  (YMap [(YStr "a", YStr "b"), (YStr "multi line", YNull)])
+
+-- Adjacent colon after quoted key (no space required)
+prop_flow_adjacent_colon : Property
+prop_flow_adjacent_colon = parseOk "[ \"key\":value ]"
+  (YSeq [YMap [(YStr "key", YStr "value")]])
+
+-- Adjacent colon after flow map
+prop_flow_adjacent_colon_map : Property
+prop_flow_adjacent_colon_map = parseOk "[ {a: b}:value ]"
+  (YSeq [YMap [(YMap [(YStr "a", YStr "b")], YStr "value")]])
+
+--------------------------------------------------------------------------------
+--          Tag on Separate Line
+--------------------------------------------------------------------------------
+
+-- Tag followed by newline + indent
+prop_tag_newline_indent : Property
+prop_tag_newline_indent = parseOk
+  """
+  foo: !!seq
+    - a
+    - b
+  """
+  (YMap [(YStr "foo", YSeq [YStr "a", YStr "b"])])
+
+-- Tag on nested map
+prop_tag_nested_map : Property
+prop_tag_nested_map = parseOk
+  """
+  foo: !!map
+    key: value
+  """
+  (YMap [(YStr "foo", YMap [(YStr "key", YStr "value")])])
+
 -- Anchor with tag
 prop_anchor_with_tag : Property
 prop_anchor_with_tag = parseOk
@@ -1698,6 +1745,12 @@ properties =
     , ("prop_flow_tagged_key", prop_flow_tagged_key)
     , ("prop_flow_alias_key", prop_flow_alias_key)
     , ("prop_flow_anchor_key", prop_flow_anchor_key)
+    , ("prop_flow_hash_in_url", prop_flow_hash_in_url)
+    , ("prop_flow_multiline_plain", prop_flow_multiline_plain)
+    , ("prop_flow_adjacent_colon", prop_flow_adjacent_colon)
+    , ("prop_flow_adjacent_colon_map", prop_flow_adjacent_colon_map)
+    , ("prop_tag_newline_indent", prop_tag_newline_indent)
+    , ("prop_tag_nested_map", prop_tag_nested_map)
     , ("prop_anchor_with_tag", prop_anchor_with_tag)
     , ("prop_alias_undefined", prop_alias_undefined)
     , ("prop_alias_before_anchor", prop_alias_before_anchor)

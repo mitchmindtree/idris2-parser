@@ -362,7 +362,12 @@ mutual
   -- Skip leading newline (e.g., after tag at document level: !!str\nhello)
   value m (B TNewline _ :: xs) (SA r) = succT $ value m xs r
   -- Tagged value: parse the tag, then the value, and apply the tag
-  -- Special case: tag followed by newline at document level (e.g., "--- !!str\nhello")
+  -- Tag followed by newline + indent = nested block content
+  value m (B (TTag tag) _ :: B TNewline _ :: xs@(B TIndent _ :: _)) (SA r) =
+    case succT $ blockNestedValue m xs r of
+      Succ0 (m', v) ys => Succ0 (m', applyTag tag v) ys
+      Fail0 err => Fail0 err
+  -- Tag followed by newline (no indent) at document level (e.g., "--- !!str\nhello")
   value m (B (TTag tag) _ :: B TNewline _ :: xs) (SA r) =
     case succT $ value m xs r of
       Succ0 (m', v) ys => Succ0 (m', applyTag tag v) ys
