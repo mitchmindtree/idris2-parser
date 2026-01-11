@@ -337,24 +337,43 @@ mutual
       else plainScalarBlockMulti bi (sc :< c) xs
   plainScalarBlockMulti bi sc [] = finishScalar sc []
 
-||| Read a plain (unquoted) scalar in flow context
-||| In flow context, : ends the scalar only when followed by whitespace or flow indicator
-plainScalarFlow : SnocList Char -> AutoTok e String
-plainScalarFlow sc (':' :: x :: xs) =
-  if isMappingIndicatorNext x
-    then finishScalar sc (':' :: x :: xs)
-    else plainScalarFlow (sc :< ':') (x :: xs)
-plainScalarFlow sc (':' :: []) = finishScalar sc (':' :: [])
--- Hash: only ends scalar if preceded by whitespace (comment)
-plainScalarFlow sc ('#' :: xs) =
-  if lastIsSpace sc
-    then finishScalar sc ('#' :: xs)
-    else plainScalarFlow (sc :< '#') xs
-plainScalarFlow sc (c :: xs) =
-  if isPlainEndAlways c || isFlowIndicator c
-    then finishScalar sc (c :: xs)
-    else plainScalarFlow (sc :< c) xs
-plainScalarFlow sc [] = finishScalar sc []
+||| Check if a character can start flow scalar continuation content
+isFlowContent : Char -> Bool
+isFlowContent c = not (isFlowIndicator c) && c /= ':' && c /= '#' && c /= '\n' && c /= '\r'
+
+mutual
+  ||| Skip leading whitespace after newline in flow context, then continue scalar
+  plainScalarFlowContinue : SnocList Char -> AutoTok e String
+  plainScalarFlowContinue sc (' ' :: xs) = plainScalarFlowContinue sc xs
+  plainScalarFlowContinue sc ('\t' :: xs) = plainScalarFlowContinue sc xs
+  plainScalarFlowContinue sc (c :: xs) =
+    if isFlowContent c
+      then plainScalarFlow (sc :< c) xs  -- Continue with content
+      else finishScalar sc (c :: xs)     -- End at indicator/colon/etc
+  plainScalarFlowContinue sc [] = finishScalar sc []
+
+  ||| Read a plain (unquoted) scalar in flow context (multiline aware)
+  ||| In flow context, : ends the scalar only when followed by whitespace or flow indicator
+  ||| Newlines are folded to spaces if the continuation has content
+  plainScalarFlow : SnocList Char -> AutoTok e String
+  plainScalarFlow sc (':' :: x :: xs) =
+    if isMappingIndicatorNext x
+      then finishScalar sc (':' :: x :: xs)
+      else plainScalarFlow (sc :< ':') (x :: xs)
+  plainScalarFlow sc (':' :: []) = finishScalar sc (':' :: [])
+  -- Hash: only ends scalar if preceded by whitespace (comment)
+  plainScalarFlow sc ('#' :: xs) =
+    if lastIsSpace sc
+      then finishScalar sc ('#' :: xs)
+      else plainScalarFlow (sc :< '#') xs
+  -- Newline: check for continuation (line folding in flow context)
+  plainScalarFlow sc ('\n' :: xs) = plainScalarFlowContinue (rtrimLine sc :< ' ') xs
+  plainScalarFlow sc ('\r' :: '\n' :: xs) = plainScalarFlowContinue (rtrimLine sc :< ' ') xs
+  plainScalarFlow sc (c :: xs) =
+    if isFlowIndicator c
+      then finishScalar sc (c :: xs)
+      else plainScalarFlow (sc :< c) xs
+  plainScalarFlow sc [] = finishScalar sc []
 
 --------------------------------------------------------------------------------
 --          Block Scalars
