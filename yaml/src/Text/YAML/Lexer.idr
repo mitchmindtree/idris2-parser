@@ -599,6 +599,10 @@ lexTag xs = TTag <$> tagChars [<] xs
 isAnchorChar : Char -> Bool
 isAnchorChar c = not (isSpace c) && not (elem c ['[', ']', '{', '}', ','])
 
+||| Valid anchor name characters in flow context (also excludes colon)
+isAnchorCharFlow : Char -> Bool
+isAnchorCharFlow c = not (isSpace c) && not (elem c ['[', ']', '{', '}', ',', ':'])
+
 ||| Lex anchor/alias name (one or more anchor chars)
 anchorName : SnocList Char -> AutoTok e String
 anchorName sc (c :: xs) =
@@ -607,13 +611,29 @@ anchorName sc (c :: xs) =
     else Succ (cast sc) (c :: xs)
 anchorName sc [] = Succ (cast sc) []
 
+||| Lex anchor/alias name in flow context (colon terminates)
+anchorNameFlow : SnocList Char -> AutoTok e String
+anchorNameFlow sc (c :: xs) =
+  if isAnchorCharFlow c
+    then anchorNameFlow (sc :< c) xs
+    else Succ (cast sc) (c :: xs)
+anchorNameFlow sc [] = Succ (cast sc) []
+
 ||| Lex an anchor token: &name
 lexAnchor : AutoTok e YAMLToken
 lexAnchor xs = TAnchor <$> anchorName [<] xs
 
+||| Lex an anchor token in flow context: &name (colon terminates)
+lexAnchorFlow : AutoTok e YAMLToken
+lexAnchorFlow xs = TAnchor <$> anchorNameFlow [<] xs
+
 ||| Lex an alias token: *name
 lexAlias : AutoTok e YAMLToken
 lexAlias xs = TAlias <$> anchorName [<] xs
+
+||| Lex an alias token in flow context: *name (colon terminates)
+lexAliasFlow : AutoTok e YAMLToken
+lexAliasFlow xs = TAlias <$> anchorNameFlow [<] xs
 
 --------------------------------------------------------------------------------
 --          Directives
@@ -703,8 +723,8 @@ flowTok ('}' :: xs)  = Succ TRBrace xs
 flowTok ('"' :: xs)  = TScalar . YStr <$> dqString [<] xs
 flowTok ('\'' :: xs) = TScalar . YStr <$> sqString [<] xs
 flowTok ('!' :: xs)  = lexTag xs
-flowTok ('&' :: xs)  = lexAnchor xs
-flowTok ('*' :: xs)  = lexAlias xs
+flowTok ('&' :: xs)  = lexAnchorFlow xs
+flowTok ('*' :: xs)  = lexAliasFlow xs
 flowTok (c :: xs)    = TScalar . interpretScalar <$> plainScalarFlow [< c] xs
 flowTok []           = eoiAt Same
 

@@ -1131,6 +1131,16 @@ prop_flow_tagged_key : Property
 prop_flow_tagged_key = parseOk "{ !!str : bar }"
   (YMap [(YStr "", YStr "bar")])
 
+-- Alias as key in flow map
+prop_flow_alias_key : Property
+prop_flow_alias_key = parseOk "{ &a foo: 1, bar: *a }"
+  (YMap [(YStr "bar", YStr "foo"), (YStr "foo", YInt 1)])
+
+-- Anchor on scalar key in flow map
+prop_flow_anchor_key : Property
+prop_flow_anchor_key = parseOk "{ &a foo: val }"
+  (YMap [(YStr "foo", YStr "val")])
+
 -- Anchor with tag
 prop_anchor_with_tag : Property
 prop_anchor_with_tag = parseOk
@@ -1646,6 +1656,8 @@ properties =
     , ("prop_flow_seq_implicit_null", prop_flow_seq_implicit_null)
     , ("prop_flow_tagged_empty_value", prop_flow_tagged_empty_value)
     , ("prop_flow_tagged_key", prop_flow_tagged_key)
+    , ("prop_flow_alias_key", prop_flow_alias_key)
+    , ("prop_flow_anchor_key", prop_flow_anchor_key)
     , ("prop_anchor_with_tag", prop_anchor_with_tag)
     , ("prop_alias_undefined", prop_alias_undefined)
     , ("prop_alias_before_anchor", prop_alias_before_anchor)

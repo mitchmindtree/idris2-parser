@@ -484,6 +484,15 @@ mutual
   -- Tag as key: { !!str : bar }
   flowMap b sv m (B (TTag tag) _ :: B TColon _ :: xs) (SA r) =
     let k = applyTag tag (YStr "") in succT $ flowMapAfterColon b sv k m xs r
+  -- Alias as key: { *alias : value }
+  flowMap b sv m (B (TAlias name) bb :: B TColon _ :: xs) (SA r) =
+    case lookup name m of
+      Just k  => succT $ flowMapAfterColon b sv k m xs r
+      Nothing => Fail0 (B (Custom (UndefinedAlias name)) bb)
+  -- Anchor on scalar key: { &a foo : value }
+  flowMap b sv m (B (TAnchor name) _ :: B (TScalar k) _ :: B TColon _ :: xs) (SA r) =
+    let m' = insert name k m
+    in succT $ flowMapAfterColon b sv k m' xs r
   flowMap b sv m (B (TScalar k) _ :: B TColon _ :: xs) (SA r) =
     succT $ flowMapAfterColon b sv k m xs r
   -- Scalar followed by comma = implicit key with null value
