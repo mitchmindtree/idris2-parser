@@ -1250,6 +1250,15 @@ prop_anchor_null_value = parseOk
   """
   (YMap [(YStr "a", YNull), (YStr "b", YNull)])
 
+-- Anchor on key used in subsequent alias as key (E76Z test case)
+prop_anchor_alias_as_key : Property
+prop_anchor_alias_as_key = parseOk
+  """
+  &a a: &b b
+  *b : *a
+  """
+  (YMap [(YStr "a", YStr "b"), (YStr "b", YStr "a")])
+
 -- Anchor on nested structure (using flow syntax)
 prop_anchor_nested : Property
 prop_anchor_nested = parseOk
@@ -1764,6 +1773,7 @@ properties =
     , ("prop_anchor_hyphen_name", prop_anchor_hyphen_name)
     , ("prop_anchor_unused", prop_anchor_unused)
     , ("prop_anchor_null_value", prop_anchor_null_value)
+    , ("prop_anchor_alias_as_key", prop_anchor_alias_as_key)
     , ("prop_anchor_nested", prop_anchor_nested)
     , ("prop_anchor_block_nested", prop_anchor_block_nested)
     , ("prop_anchor_block_seq", prop_anchor_block_seq)

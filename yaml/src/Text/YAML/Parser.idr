@@ -289,6 +289,15 @@ mutual
       Succ0 (m', v) (B TNewline _ :: B (TScalar k2) _ :: B TColon _ :: ys) =>
         -- Another key-value pair follows at same level
         succT $ blockMapAfterColon k2 (addOrMerge k v sv) m' ys r
+      Succ0 (m', v) (B TNewline _ :: B (TAlias name) b :: B TColon _ :: ys) =>
+        -- Alias as key at same level
+        case lookup name m' of
+          Just k2 => succT $ blockMapAfterColon k2 (addOrMerge k v sv) m' ys r
+          Nothing => Fail0 (B (Custom (UndefinedAlias name)) b)
+      Succ0 (m', v) (B TNewline _ :: B (TAnchor name) _ :: B (TScalar k2) _ :: B TColon _ :: ys) =>
+        -- Anchor on scalar key at same level
+        let m'' = insert name k2 m'
+         in succT $ blockMapAfterColon k2 (addOrMerge k v sv) m'' ys r
       Succ0 (m', v) (B TNewline _ :: B TQuestion _ :: ys) =>
         -- Complex key follows at same level
         case succT $ value m' ys r of
@@ -346,6 +355,14 @@ mutual
       Fail0 err => Fail0 err
   value m (B (TAnchor name) _ :: xs@(B TNewline _ :: _)) _ =
     Succ0 (insert name YNull m, YNull) xs
+  -- Anchor on scalar key: add anchor BEFORE parsing the mapping
+  -- This makes the anchor available for the value and subsequent entries
+  -- Must come BEFORE general anchor pattern for correct pattern matching
+  value m (B (TAnchor name) _ :: B (TScalar k) _ :: B TColon _ :: xs) (SA r) =
+    let m' = insert name k m
+     in case succT $ blockMapAfterColon k empty m' xs r of
+          Succ0 (m'', v) ys => Succ0 (m'', v) ys
+          Fail0 err => Fail0 err
   -- Anchor: parse value, register in map, return both
   value m (B (TAnchor name) _ :: xs) (SA r) =
     case succT $ value m xs r of
