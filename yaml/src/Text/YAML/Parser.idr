@@ -367,6 +367,17 @@ mutual
     case succT $ value m xs r of
       Succ0 (m', v) ys => Succ0 (m', applyTag tag v) ys
       Fail0 err => Fail0 err
+  -- In flow context: tag followed by flow indicator = empty tagged value
+  value m (B (TTag tag) _ :: xs@(B TComma _ :: _)) _ =
+    Succ0 (m, applyTag tag (YStr "")) xs
+  value m (B (TTag tag) _ :: xs@(B TRBracket _ :: _)) _ =
+    Succ0 (m, applyTag tag (YStr "")) xs
+  value m (B (TTag tag) _ :: xs@(B TRBrace _ :: _)) _ =
+    Succ0 (m, applyTag tag (YStr "")) xs
+  -- In flow context: tag followed by colon = tagged empty value as key
+  -- Leave colon for flow parser to handle as implicit key
+  value m (B (TTag tag) _ :: xs@(B TColon _ :: _)) _ =
+    Succ0 (m, applyTag tag (YStr "")) xs
   -- Tag with content on same line or nested
   value m (B (TTag tag) _ :: xs) (SA r) =
     case succT $ value m xs r of
@@ -470,6 +481,9 @@ mutual
       Succ0 _ (y :: ys)                 => unexpected y
       Succ0 _ []                        => unclosed b TLBrace
       Fail0 err                         => Fail0 err
+  -- Tag as key: { !!str : bar }
+  flowMap b sv m (B (TTag tag) _ :: B TColon _ :: xs) (SA r) =
+    let k = applyTag tag (YStr "") in succT $ flowMapAfterColon b sv k m xs r
   flowMap b sv m (B (TScalar k) _ :: B TColon _ :: xs) (SA r) =
     succT $ flowMapAfterColon b sv k m xs r
   -- Scalar followed by comma = implicit key with null value

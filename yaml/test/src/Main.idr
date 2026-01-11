@@ -1121,6 +1121,16 @@ prop_flow_seq_implicit_null : Property
 prop_flow_seq_implicit_null = parseOk "[a:, b]"
   (YSeq [YMap [(YStr "a", YNull)], YStr "b"])
 
+-- Tagged empty value in flow map
+prop_flow_tagged_empty_value : Property
+prop_flow_tagged_empty_value = parseOk "{ foo: !!str, bar: 1 }"
+  (YMap [(YStr "bar", YInt 1), (YStr "foo", YStr "")])
+
+-- Tagged value as key in flow map
+prop_flow_tagged_key : Property
+prop_flow_tagged_key = parseOk "{ !!str : bar }"
+  (YMap [(YStr "", YStr "bar")])
+
 -- Anchor with tag
 prop_anchor_with_tag : Property
 prop_anchor_with_tag = parseOk
@@ -1634,6 +1644,8 @@ properties =
     , ("prop_flow_complex_key_null", prop_flow_complex_key_null)
     , ("prop_flow_complex_key_scalar_null", prop_flow_complex_key_scalar_null)
     , ("prop_flow_seq_implicit_null", prop_flow_seq_implicit_null)
+    , ("prop_flow_tagged_empty_value", prop_flow_tagged_empty_value)
+    , ("prop_flow_tagged_key", prop_flow_tagged_key)
     , ("prop_anchor_with_tag", prop_anchor_with_tag)
     , ("prop_alias_undefined", prop_alias_undefined)
     , ("prop_alias_before_anchor", prop_alias_before_anchor)
